@@ -85,7 +85,29 @@ const CATEGORIES = [
 
 function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, vehicles = [], forceGas = false }) {
   const restored = backgroundJob?.preview || {}
-  const [form, setForm] = useState({ document_type: type, transaction_type: restored.suggested_transaction_type || 'expense', category: forceGas ? 'gas' : (restored.suggested_category || (type === 'rfi' ? 'job_expense' : 'other')), incurred_at: restored.suggested_date || new Date().toISOString().slice(0, 10), amount: restored.suggested_amount || '', vendor: restored.suggested_vendor || '', currency: restored.suggested_currency || 'CAD', link_type: job ? 'job' : '', link_id: job?.code || '', link_label: job?.name || '', rfi_number: '', rfi_subject: '', rfi_question: '', rfi_to: '', rfi_attention_name: '', rfi_attention_phone: '', rfi_attention_email: '', rfi_due_at: '', vehicle_id: vehicles.find(vehicle => vehicle.is_default)?.id || '', fuel_litres: '', ocr_text_override: restored.ocr_text || '' })
+  const [form, setForm] = useState({
+    document_type: type,
+    transaction_type: restored.suggested_transaction_type || 'expense',
+    category: forceGas ? 'gas' : (restored.suggested_category || (type === 'rfi' ? 'job_expense' : 'other')),
+    incurred_at: restored.suggested_date || new Date().toISOString().slice(0, 10),
+    amount: restored.suggested_amount || '',
+    vendor: restored.suggested_vendor || '',
+    currency: restored.suggested_currency || 'CAD',
+    link_type: job ? 'job' : '',
+    link_id: job?.code || '',
+    link_label: job?.name || '',
+    rfi_number: '',
+    rfi_subject: '',
+    rfi_question: '',
+    rfi_to: '',
+    rfi_attention_name: '',
+    rfi_attention_phone: '',
+    rfi_attention_email: '',
+    rfi_due_at: '',
+    vehicle_id: vehicles.find(vehicle => vehicle.is_default)?.id || '',
+    fuel_litres: restored.suggested_fuel_litres || restored.suggested_litres || '',
+    ocr_text_override: restored.ocr_text || '',
+  })
   const [file, setFile] = useState(backgroundJob?.file || null)
   const [busy, setBusy] = useState(false)
   const [previewing, setPreviewing] = useState(['queued', 'processing'].includes(backgroundJob?.status))
@@ -93,8 +115,11 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
   const [previewImageFailed, setPreviewImageFailed] = useState(false)
   const [ocrMessage, setOcrMessage] = useState(backgroundJob?.status === 'completed' ? 'OCR is ready. Review the fields before confirming.' : backgroundJob?.error || '')
   const [previewReady, setPreviewReady] = useState(['completed', 'failed'].includes(backgroundJob?.status))
-  const [reviewOpen, setReviewOpen] = useState(backgroundJob?.status === 'completed')
+  const [detectedFields, setDetectedFields] = useState({})
   const previewRequest = useRef(0)
+  const cameraInputRef = useRef(null)
+  const galleryInputRef = useRef(null)
+
   useEffect(() => () => { previewRequest.current += 1 }, [])
   useEffect(() => {
     if (!file || !String(file.type || '').startsWith('image/')) return undefined
@@ -103,6 +128,7 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
     setPreviewUrl(objectUrl)
     return () => URL.revokeObjectURL(objectUrl)
   }, [file])
+
   useEffect(() => {
     if (file || !backgroundJob || !String(backgroundJob.mime_type || '').startsWith('image/')) return undefined
     const controller = new AbortController()
@@ -123,64 +149,238 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
       .catch(error => { if (error.name !== 'AbortError') setPreviewImageFailed(true) })
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [backgroundJob?.job_id, backgroundJob?.mime_type, file])
-  const selectFile = async (selected) => {
-    if (!selected) return
+
+  const selectFiles = async (selectedList) => {
+    if (!selectedList || selectedList.length === 0) return
+    const filesArray = Array.from(selectedList)
+    const primaryFile = filesArray[0]
+    const remainingFiles = filesArray.slice(1)
+
+    // Queue any additional files in the background
+    for (const extraFile of remainingFiles) {
+      const extraData = new FormData()
+      extraData.append('file', extraFile)
+      extraData.append('document_type', type)
+      api('/receipts/preview', { method: 'POST', body: extraData })
+        .then(queued => {
+          if (onJobQueued) onJobQueued({ ...queued, documentType: type, file: extraFile, filename: extraFile.name })
+        })
+        .catch(() => {})
+    }
+
     const requestId = ++previewRequest.current
     setPreviewImageFailed(false)
-    setFile(selected); setPreviewUrl(''); setPreviewing(true); setPreviewReady(false); setOcrMessage('Receipt queued for processing…')
-    const data = new FormData(); data.append('file', selected); data.append('document_type', type)
+    setFile(primaryFile)
+    setPreviewUrl('')
+    setPreviewing(true)
+    setPreviewReady(false)
+    setOcrMessage(filesArray.length > 1 ? `Queued ${filesArray.length} receipts! Reading first receipt…` : 'Reading receipt and extracting details…')
+
+    const data = new FormData()
+    data.append('file', primaryFile)
+    data.append('document_type', type)
     try {
       const queued = await api('/receipts/preview', { method: 'POST', body: data })
-      onJobQueued({ ...queued, documentType: type, file: selected, filename: selected.name })
+      if (onJobQueued) onJobQueued({ ...queued, documentType: type, file: primaryFile, filename: primaryFile.name })
       let job = queued
       let attempts = 0
       while (requestId === previewRequest.current && ['queued', 'processing'].includes(job.status) && attempts < 300) {
         attempts += 1
-        setOcrMessage(job.status === 'processing' ? 'Reading receipt in the background…' : 'Receipt is waiting for OCR…')
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        setOcrMessage(job.status === 'processing' ? 'Reading receipt in the background…' : 'Processing OCR…')
+        await new Promise(resolve => setTimeout(resolve, 800))
         job = await api(`/receipts/preview/${queued.job_id}`)
       }
       if (requestId !== previewRequest.current) return
       if (['queued', 'processing'].includes(job.status)) throw new Error('OCR preview timed out.')
       if (job.status === 'failed') throw new Error(job.error || 'OCR preview failed')
       const result = job.preview || {}
+      const extractedLitres = result.suggested_fuel_litres || result.suggested_litres || ''
+      const isGas = forceGas || result.suggested_category === 'gas'
+
+      setDetectedFields({
+        vendor: result.suggested_vendor,
+        amount: result.suggested_amount,
+        fuel_litres: extractedLitres,
+        category: result.suggested_category,
+      })
+
       setForm(current => ({
         ...current,
         ocr_text_override: result.ocr_text || '',
         vendor: current.vendor || result.suggested_vendor || '',
         amount: current.amount || result.suggested_amount || '',
         incurred_at: result.suggested_date || current.incurred_at,
-        category: result.suggested_category || current.category,
+        category: isGas ? 'gas' : (result.suggested_category || current.category),
         currency: result.suggested_currency || current.currency,
+        fuel_litres: current.fuel_litres || extractedLitres,
         transaction_type: result.suggested_transaction_type || current.transaction_type,
       }))
       setPreviewReady(true)
-      setOcrMessage(result.message || (result.ocr_text ? 'OCR extracted successfully. Review the fields below.' : 'OCR finished with no detected text. You can enter details manually.'))
-    } catch (error) { if (requestId === previewRequest.current) { setPreviewReady(true); setOcrMessage(`${error.message} You can enter details manually.`) } }
-    finally { if (requestId === previewRequest.current) setPreviewing(false) }
+      const successMsg = extractedLitres
+        ? `OCR extracted successfully (${extractedLitres} L detected). Review fields below.`
+        : (result.ocr_text ? 'OCR extracted successfully. Review fields below.' : 'OCR finished with no detected text. You can enter details manually.')
+      setOcrMessage(result.message || successMsg)
+    } catch (error) {
+      if (requestId === previewRequest.current) {
+        setPreviewReady(true)
+        setOcrMessage(`${error.message} You can enter details manually.`)
+      }
+    } finally {
+      if (requestId === previewRequest.current) setPreviewing(false)
+    }
   }
+
   const submit = async (event) => {
-    event.preventDefault(); setBusy(true)
+    event.preventDefault()
+    setBusy(true)
     const data = new FormData()
     Object.entries(form).forEach(([key, value]) => (value !== '' || key === 'ocr_text_override') && data.append(key, value))
     if (file) data.append('file', file)
-    try { await onSave(data, backgroundJob?.job_id) } finally { setBusy(false) }
+    try {
+      await onSave(data, backgroundJob?.job_id)
+    } finally {
+      setBusy(false)
+    }
   }
+
   const hasUpload = Boolean(file || backgroundJob)
   const uploadMime = file?.type || backgroundJob?.mime_type || ''
   const uploadName = file?.name || backgroundJob?.filename
+
   return <form className="form" onSubmit={submit}>
-    <label className="dropzone">Screenshot or file<input required={!backgroundJob} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" onChange={e => selectFile(e.target.files[0])}/><span>{uploadName || 'Take a photo or choose a receipt'}</span><small>JPEG, PNG, WebP or PDF · OCR preview runs before saving</small></label>
+    <input
+      ref={cameraInputRef}
+      type="file"
+      accept="image/*"
+      capture="environment"
+      style={{ display: 'none' }}
+      onChange={e => selectFiles(e.target.files)}
+    />
+    <input
+      ref={galleryInputRef}
+      type="file"
+      multiple
+      accept="image/*,application/pdf,.heic,.heif,.jpg,.jpeg,.png,.webp"
+      style={{ display: 'none' }}
+      onChange={e => selectFiles(e.target.files)}
+    />
+
+    <div className="dropzone" onClick={() => galleryInputRef.current?.click()} style={{ cursor: 'pointer' }}>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '10px' }}>
+        <button
+          type="button"
+          className="button secondary"
+          style={{ padding: '8px 14px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click() }}
+        >
+          📷 Take Photo
+        </button>
+        <button
+          type="button"
+          className="button secondary"
+          style={{ padding: '8px 14px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          onClick={(e) => { e.stopPropagation(); galleryInputRef.current?.click() }}
+        >
+          🖼️ Choose Images / PDF
+        </button>
+      </div>
+      <span>{uploadName || 'Tap to choose or drag receipt files here'}</span>
+      <small>Supports multiple images, camera photos & PDF · OCR runs automatically</small>
+    </div>
+
     {hasUpload && <div className={`ocr-state ${previewing ? 'working' : ''}`}><i/>{ocrMessage}</div>}
-    {hasUpload && <section className="ocr-review"><div className="receipt-preview">{uploadMime.startsWith('image/') ? (previewImageFailed ? <div><span>!</span><strong>Image preview unavailable</strong></div> : previewUrl ? <img src={previewUrl} alt="Receipt preview" onError={() => setPreviewImageFailed(true)}/> : <div><div className="spinner small"/><strong>Loading preview…</strong></div>) : <div><span>PDF</span><strong>{uploadName}</strong></div>}</div><div className="ocr-fields"><label>Extracted text <small>Edit this if OCR read anything incorrectly</small><textarea rows="9" value={form.ocr_text_override} onChange={e => setForm({...form, ocr_text_override: e.target.value})} placeholder="No text detected—type receipt details here"/></label></div></section>}
-    <div className="form-row"><label>Date<input required type="date" value={form.incurred_at} onChange={e => setForm({...form, incurred_at: e.target.value})}/></label><label>Category<select value={form.category} onChange={e => setForm({...form, category: e.target.value})}>{CATEGORIES.map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-    {type === 'receipt' && form.category === 'gas' && <div className="form-row"><label>Vehicle<select required value={form.vehicle_id} onChange={e => setForm({...form, vehicle_id:e.target.value})}><option value="">Select vehicle</option>{vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></label><label>Litres purchased<input required type="number" min="0.01" max="10000" step="0.01" value={form.fuel_litres} onChange={e => setForm({...form, fuel_litres:e.target.value})}/><small>Required to calculate vehicle range</small></label></div>}
-    {type === 'receipt' && <><div className="form-row"><label>Record as<select value={form.transaction_type} onChange={e => setForm({...form, transaction_type: e.target.value})}><option value="expense">Expense</option><option value="income">Income</option></select></label><label>Amount <small>Optional—OCR can detect it</small><input min="0" step="0.01" type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})}/></label></div><label>Vendor <small>Optional—OCR can detect it</small><input value={form.vendor} onChange={e => setForm({...form, vendor: e.target.value})}/></label></>}
-    {type === 'rfi' && <fieldset><legend>RFI request</legend><div className="form-row"><label>RFI number<input maxLength="80" value={form.rfi_number} onChange={e => setForm({...form, rfi_number: e.target.value})} placeholder="RFI 031"/></label><label>Response required by<input type="date" value={form.rfi_due_at} onChange={e => setForm({...form, rfi_due_at: e.target.value})}/></label></div><label>Subject<input maxLength="200" value={form.rfi_subject} onChange={e => setForm({...form, rfi_subject: e.target.value})} placeholder="Thermostat locations"/></label><label>To - company and mailing address<textarea rows="4" maxLength="1000" value={form.rfi_to} onChange={e => setForm({...form, rfi_to: e.target.value})} placeholder="Company name, address, and any additional recipients"/></label><div className="form-row"><label>Attention<input maxLength="200" value={form.rfi_attention_name} onChange={e => setForm({...form, rfi_attention_name: e.target.value})} placeholder="Contact name"/></label><label>Phone<input type="tel" maxLength="80" value={form.rfi_attention_phone} onChange={e => setForm({...form, rfi_attention_phone: e.target.value})}/></label></div><label>Attention email<input type="email" maxLength="200" value={form.rfi_attention_email} onChange={e => setForm({...form, rfi_attention_email: e.target.value})}/></label><label>Information requested<textarea rows="5" maxLength="5000" value={form.rfi_question} onChange={e => setForm({...form, rfi_question: e.target.value})} placeholder="Describe the clarification needed"/></label></fieldset>}
-    <fieldset><legend>Link to work (optional)</legend><div className="form-row"><label>Record type<select value={form.link_type} onChange={e => setForm({...form, link_type: e.target.value})}><option value="">Not linked</option><option value="job">Job</option><option value="quote">Quote</option><option value="estimate">Estimate</option></select></label><label>Job / quote / estimate ID<input value={form.link_id} onChange={e => setForm({...form, link_id: e.target.value})} placeholder="e.g. JOB-1042"/></label></div><label>Description<input value={form.link_label} onChange={e => setForm({...form, link_label: e.target.value})} placeholder="Optional reference name"/></label></fieldset>
-    <footer><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button" disabled={busy || previewing || !hasUpload}>{busy ? 'Uploading…' : previewing ? 'Reading…' : `Confirm & upload ${type === 'rfi' ? 'RFI' : 'receipt'}`}</button></footer>
+
+    {hasUpload && (
+      <section className="ocr-review">
+        <div className="receipt-preview">
+          {uploadMime.startsWith('image/') ? (
+            previewImageFailed ? <div><span>!</span><strong>Image preview unavailable</strong></div> :
+            previewUrl ? <img src={previewUrl} alt="Receipt preview" onError={() => setPreviewImageFailed(true)}/> :
+            <div><div className="spinner small"/><strong>Loading preview…</strong></div>
+          ) : <div><span>PDF</span><strong>{uploadName}</strong></div>}
+        </div>
+        <div className="ocr-fields">
+          <label>
+            Extracted text <small>Edit this if OCR read anything incorrectly</small>
+            <textarea
+              rows="9"
+              value={form.ocr_text_override}
+              onChange={e => setForm({ ...form, ocr_text_override: e.target.value })}
+              placeholder="No text detected—type receipt details here"
+            />
+          </label>
+        </div>
+      </section>
+    )}
+
+    <div className="form-row">
+      <label>Date<input required type="date" value={form.incurred_at} onChange={e => setForm({ ...form, incurred_at: e.target.value })}/></label>
+      <label>Category<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+    </div>
+
+    {type === 'receipt' && form.category === 'gas' && (
+      <div className="form-row">
+        <label>Vehicle<select required value={form.vehicle_id} onChange={e => setForm({ ...form, vehicle_id: e.target.value })}><option value="">Select vehicle</option>{vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></label>
+        <label>
+          Litres purchased {detectedFields.fuel_litres && <span style={{ color: '#21a977', fontWeight: 'normal', fontSize: '10px' }}>(✨ Auto-detected)</span>}
+          <input required type="number" min="0.01" max="10000" step="0.01" placeholder="e.g. 45.20" value={form.fuel_litres} onChange={e => setForm({ ...form, fuel_litres: e.target.value })}/>
+          <small>Required to calculate vehicle range</small>
+        </label>
+      </div>
+    )}
+
+    {type === 'receipt' && (
+      <>
+        <div className="form-row">
+          <label>Record as<select value={form.transaction_type} onChange={e => setForm({ ...form, transaction_type: e.target.value })}><option value="expense">Expense</option><option value="income">Income</option></select></label>
+          <label>
+            Amount {detectedFields.amount && <span style={{ color: '#21a977', fontWeight: 'normal', fontSize: '10px' }}>(✨ Auto-detected)</span>}
+            <input min="0" step="0.01" type="number" placeholder="0.00" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })}/>
+          </label>
+        </div>
+        <label>
+          Vendor {detectedFields.vendor && <span style={{ color: '#21a977', fontWeight: 'normal', fontSize: '10px' }}>(✨ Auto-detected)</span>}
+          <input value={form.vendor} placeholder="e.g. Petro-Canada" onChange={e => setForm({ ...form, vendor: e.target.value })}/>
+        </label>
+      </>
+    )}
+
+    {type === 'rfi' && (
+      <fieldset>
+        <legend>RFI request</legend>
+        <div className="form-row">
+          <label>RFI number<input maxLength="80" value={form.rfi_number} onChange={e => setForm({ ...form, rfi_number: e.target.value })} placeholder="RFI 031"/></label>
+          <label>Response required by<input type="date" value={form.rfi_due_at} onChange={e => setForm({ ...form, rfi_due_at: e.target.value })}/></label>
+        </div>
+        <label>Subject<input maxLength="200" value={form.rfi_subject} onChange={e => setForm({ ...form, rfi_subject: e.target.value })} placeholder="Thermostat locations"/></label>
+        <label>To - company and mailing address<textarea rows="4" maxLength="1000" value={form.rfi_to} onChange={e => setForm({ ...form, rfi_to: e.target.value })} placeholder="Company name, address, and any additional recipients"/></label>
+        <div className="form-row">
+          <label>Attention<input maxLength="200" value={form.rfi_attention_name} onChange={e => setForm({ ...form, rfi_attention_name: e.target.value })} placeholder="Contact name"/></label>
+          <label>Phone<input type="tel" maxLength="80" value={form.rfi_attention_phone} onChange={e => setForm({ ...form, rfi_attention_phone: e.target.value })}/></label>
+        </div>
+        <label>Attention email<input type="email" maxLength="200" value={form.rfi_attention_email} onChange={e => setForm({ ...form, rfi_attention_email: e.target.value })}/></label>
+        <label>Information requested<textarea rows="5" maxLength="5000" value={form.rfi_question} onChange={e => setForm({ ...form, rfi_question: e.target.value })} placeholder="Describe the clarification needed"/></label>
+      </fieldset>
+    )}
+
+    <fieldset>
+      <legend>Link to work (optional)</legend>
+      <div className="form-row">
+        <label>Record type<select value={form.link_type} onChange={e => setForm({ ...form, link_type: e.target.value })}><option value="">Not linked</option><option value="job">Job</option><option value="quote">Quote</option><option value="estimate">Estimate</option></select></label>
+        <label>Job / quote / estimate ID<input value={form.link_id} onChange={e => setForm({ ...form, link_id: e.target.value })} placeholder="e.g. JOB-1042"/></label>
+      </div>
+      <label>Description<input value={form.link_label} onChange={e => setForm({ ...form, link_label: e.target.value })} placeholder="Optional reference name"/></label>
+    </fieldset>
+
+    <footer>
+      <button type="button" className="button secondary" onClick={onClose}>Cancel</button>
+      <button className="button" disabled={busy || previewing || !hasUpload}>
+        {busy ? 'Uploading…' : previewing ? 'Reading…' : `Confirm & upload ${type === 'rfi' ? 'RFI' : 'receipt'}`}
+      </button>
+    </footer>
   </form>
 }
+
 
 export default function App() {
   const [session, setSession] = useState(null)
