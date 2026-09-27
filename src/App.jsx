@@ -127,7 +127,7 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
     if (!selected) return
     const requestId = ++previewRequest.current
     setPreviewImageFailed(false)
-    setFile(selected); setPreviewUrl(''); setPreviewing(true); setPreviewReady(false); setReviewOpen(false); setOcrMessage('Receipt queued for background processing…')
+    setFile(selected); setPreviewUrl(''); setPreviewing(true); setPreviewReady(false); setOcrMessage('Receipt queued for processing…')
     const data = new FormData(); data.append('file', selected); data.append('document_type', type)
     try {
       const queued = await api('/receipts/preview', { method: 'POST', body: data })
@@ -155,8 +155,8 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
         transaction_type: result.suggested_transaction_type || current.transaction_type,
       }))
       setPreviewReady(true)
-      setOcrMessage(result.message || (result.ocr_text ? 'OCR is ready. Open the preview to review the fields.' : 'OCR finished with no detected text. Open the preview to enter details manually.'))
-    } catch (error) { if (requestId === previewRequest.current) { setPreviewReady(true); setOcrMessage(`${error.message} Open the preview to enter the details manually.`) } }
+      setOcrMessage(result.message || (result.ocr_text ? 'OCR extracted successfully. Review the fields below.' : 'OCR finished with no detected text. You can enter details manually.'))
+    } catch (error) { if (requestId === previewRequest.current) { setPreviewReady(true); setOcrMessage(`${error.message} You can enter details manually.`) } }
     finally { if (requestId === previewRequest.current) setPreviewing(false) }
   }
   const submit = async (event) => {
@@ -171,8 +171,8 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
   const uploadName = file?.name || backgroundJob?.filename
   return <form className="form" onSubmit={submit}>
     <label className="dropzone">Screenshot or file<input required={!backgroundJob} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" onChange={e => selectFile(e.target.files[0])}/><span>{uploadName || 'Take a photo or choose a receipt'}</span><small>JPEG, PNG, WebP or PDF · OCR preview runs before saving</small></label>
-    {hasUpload && <div className={`ocr-state ${previewing ? 'working' : ''}`}><i/>{ocrMessage}{previewReady && <button type="button" className="button secondary" onClick={() => setReviewOpen(value => !value)}>{reviewOpen ? 'Close preview' : 'Open preview'}</button>}</div>}
-    {hasUpload && reviewOpen && <section className="ocr-review"><div className="receipt-preview">{uploadMime.startsWith('image/') ? (previewImageFailed ? <div><span>!</span><strong>Image preview unavailable</strong></div> : previewUrl ? <img src={previewUrl} alt="Receipt preview" onError={() => setPreviewImageFailed(true)}/> : <div><div className="spinner small"/><strong>Loading preview…</strong></div>) : <div><span>PDF</span><strong>{uploadName}</strong></div>}</div><div className="ocr-fields"><label>Extracted text <small>Edit this if OCR read anything incorrectly</small><textarea rows="9" value={form.ocr_text_override} onChange={e => setForm({...form, ocr_text_override: e.target.value})} placeholder="No text detected—type receipt details here"/></label></div></section>}
+    {hasUpload && <div className={`ocr-state ${previewing ? 'working' : ''}`}><i/>{ocrMessage}</div>}
+    {hasUpload && <section className="ocr-review"><div className="receipt-preview">{uploadMime.startsWith('image/') ? (previewImageFailed ? <div><span>!</span><strong>Image preview unavailable</strong></div> : previewUrl ? <img src={previewUrl} alt="Receipt preview" onError={() => setPreviewImageFailed(true)}/> : <div><div className="spinner small"/><strong>Loading preview…</strong></div>) : <div><span>PDF</span><strong>{uploadName}</strong></div>}</div><div className="ocr-fields"><label>Extracted text <small>Edit this if OCR read anything incorrectly</small><textarea rows="9" value={form.ocr_text_override} onChange={e => setForm({...form, ocr_text_override: e.target.value})} placeholder="No text detected—type receipt details here"/></label></div></section>}
     <div className="form-row"><label>Date<input required type="date" value={form.incurred_at} onChange={e => setForm({...form, incurred_at: e.target.value})}/></label><label>Category<select value={form.category} onChange={e => setForm({...form, category: e.target.value})}>{CATEGORIES.map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
     {type === 'receipt' && form.category === 'gas' && <div className="form-row"><label>Vehicle<select required value={form.vehicle_id} onChange={e => setForm({...form, vehicle_id:e.target.value})}><option value="">Select vehicle</option>{vehicles.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></label><label>Litres purchased<input required type="number" min="0.01" max="10000" step="0.01" value={form.fuel_litres} onChange={e => setForm({...form, fuel_litres:e.target.value})}/><small>Required to calculate vehicle range</small></label></div>}
     {type === 'receipt' && <><div className="form-row"><label>Record as<select value={form.transaction_type} onChange={e => setForm({...form, transaction_type: e.target.value})}><option value="expense">Expense</option><option value="income">Income</option></select></label><label>Amount <small>Optional—OCR can detect it</small><input min="0" step="0.01" type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})}/></label></div><label>Vendor <small>Optional—OCR can detect it</small><input value={form.vendor} onChange={e => setForm({...form, vendor: e.target.value})}/></label></>}

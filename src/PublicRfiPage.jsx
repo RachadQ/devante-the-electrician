@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { API_URL } from './api.js'
 
-const token = window.location.hash.slice(1)
-
 export default function PublicRfiPage() {
+  const token = (typeof window !== 'undefined' ? (window.location.hash.replace(/^#/, '') || new URLSearchParams(window.location.search).get('token') || '') : '')
   const [rfi, setRfi] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -13,10 +12,21 @@ export default function PublicRfiPage() {
   const [file, setFile] = useState(null)
   const [attachmentUrls, setAttachmentUrls] = useState({})
   useEffect(() => {
+    if (!token) {
+      setError('Invalid or missing RFI link token.')
+      return
+    }
     fetch(`${API_URL}/public/rfi`, { credentials: 'omit', headers: { 'X-RFI-Token': token } })
-      .then(async response => { if (!response.ok) throw new Error('This RFI link is unavailable or has expired.'); return response.json() })
-      .then(setRfi).catch(e => setError(e.message))
-  }, [])
+      .then(async response => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail || 'This RFI link is unavailable or has expired.')
+        }
+        return response.json()
+      })
+      .then(setRfi)
+      .catch(e => setError(e.message))
+  }, [token])
   useEffect(() => {
     if (!rfi) return undefined
     let active = true
