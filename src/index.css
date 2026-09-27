@@ -104,3 +104,25 @@ h1,h2,h3,.brand-mark,.brand strong,.stats strong{font-family:Inter,ui-sans-serif
 .vehicle-insurance{border-top:1px solid var(--line);padding-top:14px}.vehicle-insurance-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.vehicle-insurance-summary span,.vehicle-insurance-summary small{display:block;color:var(--muted);font-size:11px}.vehicle-insurance-summary strong{display:block;margin-top:5px}.vehicle-insurance-form{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-top:14px}.vehicle-insurance-form label{font-size:11px;color:var(--muted)}.vehicle-insurance-form input{display:block;width:100%;margin-top:5px;border:1px solid var(--line);border-radius:8px;padding:9px}@media(max-width:700px){.vehicle-insurance-summary,.vehicle-insurance-form{grid-template-columns:1fr}}
 
 .place-search-status{margin:0!important;padding:9px 12px;color:var(--muted);font-size:11px;border-top:1px solid var(--line)}
+
+/* Responsive safeguards for narrow phones and touch controls. */
+.form select:not([multiple]){height:auto;min-height:42px}
+.vehicle-grid,.gas-forms{grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
+@media(max-width:700px){
+  .quote-item-row{grid-template-columns:1fr}
+  .quote-items-head,.quote-item-foot,.quote-form-total{align-items:stretch;flex-direction:column}
+  .quote-items-head .button,.quote-card-actions .button{min-height:44px}
+  .receipt-subtabs{width:100%;overflow-x:auto}
+  .receipt-subtabs button{flex:1 0 auto;min-height:44px;white-space:nowrap}
+  .default-vehicle-picker{align-items:stretch}
+  .default-vehicle-picker label,.default-vehicle-picker select{width:100%;min-width:0}
+  .vehicle-insurance-form .button{min-height:44px;width:100%}
+}
+@media(max-width:380px){
+  .content{padding-left:10px;padding-right:10px}
+  .panel,.stats article,.role-card{padding:16px}
+  .receipt-info dl{grid-template-columns:1fr}
+  .rfi-fields>div{grid-template-columns:1fr}
+  .public-rfi-page{padding:0}
+  .public-rfi-card{border-radius:0;border-left:0;border-right:0}
+}
