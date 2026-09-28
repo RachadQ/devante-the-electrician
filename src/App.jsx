@@ -610,10 +610,10 @@ export default function App() {
       {view === 'reports' && <Reports summary={summary} year={reportYear} setYear={setReportYear} jobs={jobs} receipts={receipts} jobId={reportJobId} setJobId={setReportJobId} currency={reportCurrency} setCurrency={setReportCurrency}/>} 
       {view === 'audit' && <section><div className="section-head"><div><h2>Audit log</h2><p>A chronological record of administrative activity.</p></div><button className="button secondary" onClick={load}>Refresh</button></div><div className="table-wrap"><table><thead><tr><th>Event</th><th>Resource</th><th>Actor</th><th>Date & time</th></tr></thead><tbody>{logs.map(log => <tr key={log.id}><td><strong>{log.action?.replaceAll('_', ' ') || 'EVENT'}</strong></td><td>{log.resource_type || '—'} <span className="dim">{log.resource_id?.slice?.(0, 8)}</span></td><td className="mono">{log.actor_id?.slice?.(0, 8) || 'System'}</td><td>{fmtDate(log.created_at)}</td></tr>)}</tbody></table>{!logs.length && <Empty text="No audit activity to show."/>}</div></section>}
     </main>
-    {mobileMenu && <div className="mobile-more" onClick={() => setMobileMenu(false)}><div onClick={e => e.stopPropagation()}><header><strong>Administration</strong><button onClick={() => setMobileMenu(false)}>×</button></header>{NAV.filter(([id]) => ['users','roles','audit'].includes(id)).map(([id,label,icon]) => <button key={id} onClick={() => changeView(id)}><span>{icon}</span>{label}<b>›</b></button>)}</div></div>}
+    {mobileMenu && <div className="mobile-more" onClick={() => setMobileMenu(false)}><div onClick={e => e.stopPropagation()}><header><strong>Administration</strong><button onClick={() => setMobileMenu(false)}>×</button></header>{NAV.filter(([id]) => ['overview','users','roles','audit'].includes(id)).map(([id,label,icon]) => <button key={id} onClick={() => changeView(id)}><span>{icon}</span>{label}<b>›</b></button>)}</div></div>}
     <nav className="mobile-nav" aria-label="Primary navigation">
-      {NAV.filter(([id]) => ['jobs','overview','reports'].includes(id)).map(([id,label,icon]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => changeView(id)}><span>{icon}</span><small>{label}</small></button>)}
-      <button className={['users','roles','audit'].includes(view) ? 'active' : ''} onClick={() => setMobileMenu(true)}><span>•••</span><small>More</small></button>
+      {NAV.filter(([id]) => ['jobs','reports'].includes(id)).map(([id,label,icon]) => <button key={id} className={view === id ? 'active' : ''} onClick={() => changeView(id)}><span>{icon}</span><small>{label}</small></button>)}
+      <button className={['overview','users','roles','audit'].includes(view) ? 'active' : ''} onClick={() => setMobileMenu(true)}><span>•••</span><small>More</small></button>
     </nav>
     {modal?.type === 'user' && <Modal title={modal.user ? 'Edit user' : 'Add a user'} onClose={() => setModal(null)}><UserForm roles={roles} user={modal.user} onSave={saveUser} onClose={() => setModal(null)}/></Modal>}
     {modal?.type === 'role' && <Modal title={modal.role ? 'Edit role' : 'Create a role'} onClose={() => setModal(null)}><RoleForm role={modal.role} onSave={saveRole} onClose={() => setModal(null)}/></Modal>}
@@ -983,7 +983,52 @@ function Reports({ summary, year, setYear, jobs, receipts, jobId, setJobId, curr
     .filter(Number.isInteger)])].sort((a, b) => b - a)
   const periods = (year === 'all' ? summary.years : summary.months)?.filter(m => m.income || m.expenses) || []
   const max = Math.max(1, ...periods.flatMap(m => [m.income, m.expenses]))
-  return <section><div className="section-head"><div><h2>Profit & loss</h2><p>Weekly, monthly, and yearly totals from uploaded transactions.</p></div><div className="report-filters"><label>Job<select value={jobId} onChange={e => setJobId(e.target.value)}><option value="">All jobs</option>{jobs.map(job => <option key={job.id} value={job.id}>{job.code} - {job.name}{job.company ? ` (${job.company})` : ''}</option>)}</select></label><label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}><option value="">All currencies</option>{[...new Set([...(summary.currencies || []), ...(currency ? [currency] : [])])].map(code => <option key={code} value={code}>{code}</option>)}</select></label><label>Year<select value={year} onChange={e => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}><option value="all">All years</option>{reportYears.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div></div>{summary.mixed_currency ? <p className="report-currency-notice">This selection contains more than one currency. Choose a currency to see accurate totals.</p> : <><div className="stats finance-stats"><article><span>Total income</span><strong className="income">{money(summary.income, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} recorded income</small></article><article><span>Total expenses</span><strong>{money(summary.expenses, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} categorized spend</small></article><article><span>Net profit / loss</span><strong className={summary.profit_loss >= 0 ? 'income' : 'loss'}>{money(summary.profit_loss, summary.currency)}</strong><small>Income minus expenses</small></article></div><div className="report-grid"><article className="panel"><h3>{year === 'all' ? 'Yearly overview' : 'Monthly overview'}</h3><p>Income and expenses by {year === 'all' ? 'year' : 'month'}</p><div className="bars">{periods.length ? periods.map(m => <div className="bar-row" key={year === 'all' ? m.year : m.month}><span>{year === 'all' ? m.year : new Intl.DateTimeFormat(undefined,{month:'short'}).format(new Date(2024,m.month-1))}</span><div><i className="expense-bar" style={{width:`${m.expenses/max*100}%`}}/><i className="income-bar" style={{width:`${m.income/max*100}%`}}/></div><strong>{money(m.income-m.expenses, summary.currency)}</strong></div>) : <Empty text="No transactions in this selection."/>}</div></article><article className="panel"><h3>Expense categories</h3><p>{year === 'all' ? 'Spending across all years' : 'Year-to-date spending'}</p><div className="category-totals">{Object.entries(summary.categories || {}).map(([name,value]) => <div key={name}><span>{categoryLabel(name)}</span><strong>{money(value, summary.currency)}</strong></div>)}</div><h3 className="weekly-title">{year === 'all' ? 'Yearly totals' : 'Weekly totals'}</h3><div className="weekly-list">{(year === 'all' ? summary.years : summary.weeks)?.slice(-6).reverse().map(w => <div key={year === 'all' ? w.year : w.week}><span>{year === 'all' ? w.year : `Week ${w.week}`}</span><strong>{money(w.income-w.expenses, summary.currency)}</strong></div>)}{!(year === 'all' ? summary.years : summary.weeks)?.length && <span className="dim">No activity</span>}</div></article></div></>}</section>
+  const currencies = summary.currencies || []
+
+  return <section><div className="section-head"><div><h2>Profit & loss</h2><p>Weekly, monthly, and yearly totals from uploaded transactions.</p></div><div className="report-filters"><label>Job<select value={jobId} onChange={e => setJobId(e.target.value)}><option value="">All jobs</option>{jobs.map(job => <option key={job.id} value={job.id}>{job.code} - {job.name}{job.company ? ` (${job.company})` : ''}</option>)}</select></label><label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}><option value="">All currencies</option>{[...new Set([...(summary.currencies || []), ...(currency ? [currency] : [])])].map(code => <option key={code} value={code}>{code}</option>)}</select></label><label>Year<select value={year} onChange={e => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}><option value="all">All years</option>{reportYears.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div></div>{summary.mixed_currency ? (
+    <div className="multi-currency-section" style={{ marginTop: '16px' }}>
+      <div className="report-currency-notice" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <strong>Multiple currencies detected ({currencies.join(', ')})</strong>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>
+            Totals cannot be combined across different currencies without conversion. Select a currency below to view its complete report:
+          </p>
+        </div>
+      </div>
+      <div className="stats finance-stats" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(260px, 1fr))` }}>
+        {currencies.map(curr => {
+          const data = summary.by_currency?.[curr] || {}
+          return (
+            <article key={curr} style={{ cursor: 'pointer', transition: 'all 0.15s ease' }} onClick={() => setCurrency(curr)}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: '#1f2937' }}>{curr} Transactions</span>
+                <span className="tag" style={{ fontSize: '11px' }}>{data.count || 0} receipt{data.count === 1 ? '' : 's'}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', margin: '8px 0' }}>
+                <div>
+                  <small style={{ display: 'block', color: '#6b7280', fontSize: '11px' }}>Income</small>
+                  <strong className="income" style={{ fontSize: '15px' }}>{money(data.income || 0, curr)}</strong>
+                </div>
+                <div>
+                  <small style={{ display: 'block', color: '#6b7280', fontSize: '11px' }}>Expenses</small>
+                  <strong style={{ fontSize: '15px' }}>{money(data.expenses || 0, curr)}</strong>
+                </div>
+              </div>
+              <div style={{ borderTop: '1px solid var(--line, #e5e7eb)', paddingTop: '8px', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <small style={{ color: '#6b7280', fontSize: '11px' }}>Net Profit / Loss:</small>
+                <strong className={(data.profit_loss || 0) >= 0 ? 'income' : 'loss'} style={{ fontSize: '14px' }}>
+                  {money(data.profit_loss || 0, curr)}
+                </strong>
+              </div>
+              <button type="button" className="button secondary" style={{ width: '100%', marginTop: '12px', fontSize: '12px', minHeight: '34px' }}>
+                View full {curr} report →
+              </button>
+            </article>
+          )
+        })}
+      </div>
+    </div>
+  ) : <><div className="stats finance-stats"><article><span>Total income</span><strong className="income">{money(summary.income, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} recorded income</small></article><article><span>Total expenses</span><strong>{money(summary.expenses, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} categorized spend</small></article><article><span>Net profit / loss</span><strong className={summary.profit_loss >= 0 ? 'income' : 'loss'}>{money(summary.profit_loss, summary.currency)}</strong><small>Income minus expenses</small></article></div><div className="report-grid"><article className="panel"><h3>{year === 'all' ? 'Yearly overview' : 'Monthly overview'}</h3><p>Income and expenses by {year === 'all' ? 'year' : 'month'}</p><div className="bars">{periods.length ? periods.map(m => <div className="bar-row" key={year === 'all' ? m.year : m.month}><span>{year === 'all' ? m.year : new Intl.DateTimeFormat(undefined,{month:'short'}).format(new Date(2024,m.month-1))}</span><div><i className="expense-bar" style={{width:`${m.expenses/max*100}%`}}/><i className="income-bar" style={{width:`${m.income/max*100}%`}}/></div><strong>{money(m.income-m.expenses, summary.currency)}</strong></div>) : <Empty text="No transactions in this selection."/>}</div></article><article className="panel"><h3>Expense categories</h3><p>{year === 'all' ? 'Spending across all years' : 'Year-to-date spending'}</p><div className="category-totals">{Object.entries(summary.categories || {}).map(([name,value]) => <div key={name}><span>{categoryLabel(name)}</span><strong>{money(value, summary.currency)}</strong></div>)}</div><h3 className="weekly-title">{year === 'all' ? 'Yearly totals' : 'Weekly totals'}</h3><div className="weekly-list">{(year === 'all' ? summary.years : summary.weeks)?.slice(-6).reverse().map(w => <div key={year === 'all' ? w.year : w.week}><span>{year === 'all' ? w.year : `Week ${w.week}`}</span><strong>{money(w.income-w.expenses, summary.currency)}</strong></div>)}{!(year === 'all' ? summary.years : summary.weeks)?.length && <span className="dim">No activity</span>}</div></article></div></>}</section>
 }
 
 function categoryLabel(value) { return CATEGORIES.find(([id]) => id === value)?.[1] || value?.replaceAll('_',' ') || 'Other' }
