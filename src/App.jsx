@@ -385,10 +385,10 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
     {hasUpload && <div className={`ocr-state ${previewing ? 'working' : ''}`}><i/>{ocrMessage}</div>}
 
     {hasUpload && (
-      <details className="ocr-details-toggle">
+      <details className="ocr-details-toggle" open>
         <summary className="ocr-toggle-summary">
           <span>🔍 View {type === 'rfi' ? 'document' : 'receipt'} preview & extracted text</span>
-          <small className="ocr-toggle-badge">{previewing ? 'Reading…' : form.ocr_text_override ? 'Text captured' : 'Tap to expand'}</small>
+          <small className="ocr-toggle-badge">{previewing ? 'Reading…' : form.ocr_text_override ? 'Text captured' : 'Tap to collapse / expand'}</small>
         </summary>
         <section className="ocr-review">
           <div className="receipt-preview">
