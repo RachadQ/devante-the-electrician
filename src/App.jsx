@@ -495,7 +495,7 @@ export default function App() {
   const [receipts, setReceipts] = useState([])
   const [receiptJobs, setReceiptJobs] = useState([])
   const [summary, setSummary] = useState(null)
-  const [reportYear, setReportYear] = useState(new Date().getFullYear())
+  const [reportYear, setReportYear] = useState('all')
   const [reportJobId, setReportJobId] = useState('')
   const [modal, setModal] = useState(null)
   const [notice, setNotice] = useState(null)
