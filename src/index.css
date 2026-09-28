@@ -172,7 +172,10 @@ h1,h2,h3,.brand-mark,.brand strong,.stats strong{font-family:Inter,ui-sans-serif
   padding: 2px 8px;
   border-radius: 4px;
 }
-.rfi-closed-section{
-  margin-top: 24px;
+.ocr-toggle-summary{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:12px 16px;font-size:12px;font-weight:700;color:#4c5468;cursor:pointer;user-select:none;list-style:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}.ocr-toggle-summary::-webkit-details-marker{display:none}.ocr-toggle-summary::after{content:'›';font-size:18px;color:#8f98af;transition:transform .2s ease;margin-left:8px}.ocr-details-toggle[open] .ocr-toggle-summary::after{transform:rotate(90deg)}
+@media(max-width:700px){
+  .ocr-toggle-summary{padding:14px 16px;min-height:50px;font-size:13px}
+  .ocr-toggle-badge{font-size:11px;padding:4px 9px}
+  .job-previews-details summary{min-height:52px}
 }
 
