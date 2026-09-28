@@ -218,7 +218,7 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
     incurred_at: restored.suggested_date || new Date().toISOString().slice(0, 10),
     amount: restored.suggested_amount || '',
     vendor: restored.suggested_vendor || '',
-    currency: restored.suggested_currency || 'CAD',
+    currency: (restored.suggested_currency && restored.suggested_currency !== 'CHF') ? restored.suggested_currency : 'CAD',
     link_type: job ? 'job' : '',
     link_id: job?.code || '',
     link_label: job?.name || '',
@@ -335,7 +335,7 @@ function UploadForm({ type, onSave, onClose, onJobQueued, backgroundJob, job, ve
         amount: current.amount || result.suggested_amount || '',
         incurred_at: result.suggested_date || current.incurred_at,
         category: isGas ? 'gas' : (result.suggested_category || current.category),
-        currency: result.suggested_currency || current.currency,
+        currency: (result.suggested_currency && result.suggested_currency !== 'CHF') ? result.suggested_currency : (current.currency || 'CAD'),
         fuel_litres: current.fuel_litres || extractedLitres,
         transaction_type: result.suggested_transaction_type || current.transaction_type,
       }))
@@ -497,7 +497,6 @@ export default function App() {
   const [summary, setSummary] = useState(null)
   const [reportYear, setReportYear] = useState(new Date().getFullYear())
   const [reportJobId, setReportJobId] = useState('')
-  const [reportCurrency, setReportCurrency] = useState('')
   const [modal, setModal] = useState(null)
   const [notice, setNotice] = useState(null)
   const [query, setQuery] = useState('')
@@ -510,7 +509,7 @@ export default function App() {
     try {
       const bootstrap = await api('/auth/bootstrap')
       setSession(bootstrap)
-      const requests = [canFrom(bootstrap, 'CONFIG_USERS_READ') ? api('/configuration/users') : [], canFrom(bootstrap, 'CONFIG_ROLES_READ') ? api('/configuration/roles') : [], canFrom(bootstrap, 'AUDIT_LOG_READ') ? api('/audit-logs?limit=100') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api('/receipts') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api(`/receipts/reports/summary?year=${reportYear}${reportJobId ? `&job_id=${encodeURIComponent(reportJobId)}` : ''}${reportCurrency ? `&currency=${encodeURIComponent(reportCurrency)}` : ''}`) : null, canFrom(bootstrap, 'JOBS_READ') ? api('/jobs') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api('/vehicles') : []]
+      const requests = [canFrom(bootstrap, 'CONFIG_USERS_READ') ? api('/configuration/users') : [], canFrom(bootstrap, 'CONFIG_ROLES_READ') ? api('/configuration/roles') : [], canFrom(bootstrap, 'AUDIT_LOG_READ') ? api('/audit-logs?limit=100') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api('/receipts') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api(`/receipts/reports/summary?year=${reportYear}${reportJobId ? `&job_id=${encodeURIComponent(reportJobId)}` : ''}`) : null, canFrom(bootstrap, 'JOBS_READ') ? api('/jobs') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api('/vehicles') : []]
       const results = await Promise.allSettled(requests)
       const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback
       setUsers(value(0, [])); setRoles(value(1, [])); setLogs(value(2, [])); setReceipts(value(3, [])); setSummary(value(4, null)); setJobs(value(5, [])); setVehicles(value(6, []))
@@ -530,7 +529,7 @@ export default function App() {
       if (error.status !== 401) setNotice({ type: 'error', text: error.message })
       setSession(null)
     } finally { if (silent !== true) setLoading(false) }
-  }, [reportYear, reportJobId, reportCurrency])
+  }, [reportYear, reportJobId])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { if (!session) return; const timer = setInterval(() => api('/auth/heartbeat', { method: 'POST' }).catch(() => setSession(null)), 10 * 60 * 1000); return () => clearInterval(timer) }, [session])
@@ -606,8 +605,8 @@ export default function App() {
       {view === 'overview' && <Overview users={users} roles={roles} logs={logs} user={session.user} setView={setView} />}
       {view === 'users' && <section><div className="section-head"><div><h2>People with access</h2><p>Manage accounts, roles, and activation status.</p></div>{can('CONFIG_USERS_CREATE') && <button className="button" onClick={() => setModal({ type: 'user' })}>+ Add user</button>}</div><div className="toolbar"><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search users…"/><span>{filteredUsers.length} users</span></div><div className="table-wrap"><table><thead><tr><th>User</th><th>Roles</th><th>Status</th><th>Last activity</th><th/></tr></thead><tbody>{filteredUsers.map(u => <tr key={u.id}><td><div className="person"><div className="avatar soft">{initials(u.full_name)}</div><div><strong>{u.full_name}</strong><span>{u.email}</span></div></div></td><td>{u.is_super_admin ? <span className="tag purple">Super admin</span> : u.role_ids?.length ? <span className="tag">{u.role_ids.length} role{u.role_ids.length > 1 ? 's' : ''}</span> : <span className="dim">No role</span>}</td><td><span className={`status ${u.is_active ? 'on' : 'off'}`}>{u.is_active ? 'Active' : 'Inactive'}</span></td><td>{fmtDate(u.last_activity_at)}</td><td className="actions">{can('CONFIG_USERS_UPDATE') && <button onClick={() => setModal({ type: 'user', user: u })}>Edit</button>}{can('CONFIG_USERS_DELETE') && u.id !== session.user.id && <button className="danger-link" onClick={() => removeUser(u)}>Delete</button>}</td></tr>)}</tbody></table>{!filteredUsers.length && <Empty text="No users match your search."/>}</div></section>}
       {view === 'roles' && <section><div className="section-head"><div><h2>Roles & permissions</h2><p>Group permissions into reusable access profiles.</p></div>{can('CONFIG_ROLES_CREATE') && <button className="button" onClick={() => setModal({ type: 'role' })}>+ New role</button>}</div><div className="card-grid">{roles.map(r => <article className="role-card" key={r.id}><div className="role-icon">◇</div><div className="role-title"><h3>{r.name}</h3><span className={`status ${r.is_active ? 'on' : 'off'}`}>{r.is_active ? 'Active' : 'Inactive'}</span></div><code>{r.code}</code><p>{r.permissions?.length || 0} permissions assigned</p><div className="chips">{r.permissions?.slice(0, 3).map(p => <span key={p}>{p.replaceAll('_', ' ').toLowerCase()}</span>)}{r.permissions?.length > 3 && <span>+{r.permissions.length - 3} more</span>}</div>{can('CONFIG_ROLES_UPDATE') && <button className="text-button" onClick={() => setModal({ type: 'role', role: r })}>Edit role →</button>}</article>)}{!roles.length && <Empty text="No roles have been created."/>}</div></section>}
-      {view === 'jobs' && <JobsView vehicles={vehicles} allReceipts={receipts} jobs={jobs} receiptJobs={receiptJobs} can={can} onCreateRfi={job => setModal({type:'rfi-create', job})} jobSection={jobSection} setJobSection={setJobSection} onRefresh={() => load(true)} onReceiptFiles={startBackgroundReceipts} onOpenPreview={(job, backgroundJob) => setModal({type:'upload', documentType:backgroundJob.documentType, backgroundJob, job})} onUploadDocument={(job, documentType) => setModal({type:'upload', documentType, job})} onViewReport={(job, receipt) => { setReportJobId(job.id); setReportYear(new Date(receipt.incurred_at).getUTCFullYear()); setReportCurrency(receipt.currency || 'CAD'); setView('reports') }}/>}
-      {view === 'reports' && <Reports summary={summary} year={reportYear} setYear={setReportYear} jobs={jobs} receipts={receipts} jobId={reportJobId} setJobId={setReportJobId} currency={reportCurrency} setCurrency={setReportCurrency}/>} 
+      {view === 'jobs' && <JobsView vehicles={vehicles} allReceipts={receipts} jobs={jobs} receiptJobs={receiptJobs} can={can} onCreateRfi={job => setModal({type:'rfi-create', job})} jobSection={jobSection} setJobSection={setJobSection} onRefresh={() => load(true)} onReceiptFiles={startBackgroundReceipts} onOpenPreview={(job, backgroundJob) => setModal({type:'upload', documentType:backgroundJob.documentType, backgroundJob, job})} onUploadDocument={(job, documentType) => setModal({type:'upload', documentType, job})} onViewReport={(job, receipt) => { setReportJobId(job.id); setReportYear(new Date(receipt.incurred_at).getUTCFullYear()); setView('reports') }}/>}
+      {view === 'reports' && <Reports summary={summary} year={reportYear} setYear={setReportYear} jobs={jobs} receipts={receipts} jobId={reportJobId} setJobId={setReportJobId}/>} 
       {view === 'audit' && <section><div className="section-head"><div><h2>Audit log</h2><p>A chronological record of administrative activity.</p></div><button className="button secondary" onClick={load}>Refresh</button></div><div className="table-wrap"><table><thead><tr><th>Event</th><th>Resource</th><th>Actor</th><th>Date & time</th></tr></thead><tbody>{logs.map(log => <tr key={log.id}><td><strong>{log.action?.replaceAll('_', ' ') || 'EVENT'}</strong></td><td>{log.resource_type || '—'} <span className="dim">{log.resource_id?.slice?.(0, 8)}</span></td><td className="mono">{log.actor_id?.slice?.(0, 8) || 'System'}</td><td>{fmtDate(log.created_at)}</td></tr>)}</tbody></table>{!logs.length && <Empty text="No audit activity to show."/>}</div></section>}
     </main>
     {mobileMenu && <div className="mobile-more" onClick={() => setMobileMenu(false)}><div onClick={e => e.stopPropagation()}><header><strong>Administration</strong><button onClick={() => setMobileMenu(false)}>×</button></header>{NAV.filter(([id]) => ['overview','users','roles','audit'].includes(id)).map(([id,label,icon]) => <button key={id} onClick={() => changeView(id)}><span>{icon}</span>{label}<b>›</b></button>)}</div></div>}
@@ -975,7 +974,7 @@ function DocumentsView({ type, items, jobs, can, onUpload, onReceiptFiles, onOpe
   {can('RECEIPTS_CREATE') && (type === 'receipt' ? <button type="button" className="mobile-fab" onClick={() => onUpload()}><span>＋</span>Add receipts</button> : <button type="button" className="mobile-fab" onClick={onUpload}><span>＋</span>New RFI</button>)}</section>
 }
 
-function Reports({ summary, year, setYear, jobs, receipts, jobId, setJobId, currency, setCurrency }) {
+function Reports({ summary, year, setYear, jobs, receipts, jobId, setJobId }) {
   if (!summary) return <Empty text="Financial reports require receipt read access."/>
   const reportYears = [...new Set([...(year === 'all' ? [] : [year]), new Date().getFullYear(), ...receipts
     .filter(item => item.document_type === 'receipt' && item.amount != null && item.incurred_at)
@@ -983,56 +982,12 @@ function Reports({ summary, year, setYear, jobs, receipts, jobId, setJobId, curr
     .filter(Number.isInteger)])].sort((a, b) => b - a)
   const periods = (year === 'all' ? summary.years : summary.months)?.filter(m => m.income || m.expenses) || []
   const max = Math.max(1, ...periods.flatMap(m => [m.income, m.expenses]))
-  const currencies = summary.currencies || []
 
-  return <section><div className="section-head"><div><h2>Profit & loss</h2><p>Weekly, monthly, and yearly totals from uploaded transactions.</p></div><div className="report-filters"><label>Job<select value={jobId} onChange={e => setJobId(e.target.value)}><option value="">All jobs</option>{jobs.map(job => <option key={job.id} value={job.id}>{job.code} - {job.name}{job.company ? ` (${job.company})` : ''}</option>)}</select></label><label>Currency<select value={currency} onChange={e => setCurrency(e.target.value)}><option value="">All currencies</option>{[...new Set([...(summary.currencies || []), ...(currency ? [currency] : [])])].map(code => <option key={code} value={code}>{code}</option>)}</select></label><label>Year<select value={year} onChange={e => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}><option value="all">All years</option>{reportYears.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div></div>{summary.mixed_currency ? (
-    <div className="multi-currency-section" style={{ marginTop: '16px' }}>
-      <div className="report-currency-notice" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <strong>Multiple currencies detected ({currencies.join(', ')})</strong>
-          <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>
-            Totals cannot be combined across different currencies without conversion. Select a currency below to view its complete report:
-          </p>
-        </div>
-      </div>
-      <div className="stats finance-stats" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(260px, 1fr))` }}>
-        {currencies.map(curr => {
-          const data = summary.by_currency?.[curr] || {}
-          return (
-            <article key={curr} style={{ cursor: 'pointer', transition: 'all 0.15s ease' }} onClick={() => setCurrency(curr)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 700, color: '#1f2937' }}>{curr} Transactions</span>
-                <span className="tag" style={{ fontSize: '11px' }}>{data.count || 0} receipt{data.count === 1 ? '' : 's'}</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', margin: '8px 0' }}>
-                <div>
-                  <small style={{ display: 'block', color: '#6b7280', fontSize: '11px' }}>Income</small>
-                  <strong className="income" style={{ fontSize: '15px' }}>{money(data.income || 0, curr)}</strong>
-                </div>
-                <div>
-                  <small style={{ display: 'block', color: '#6b7280', fontSize: '11px' }}>Expenses</small>
-                  <strong style={{ fontSize: '15px' }}>{money(data.expenses || 0, curr)}</strong>
-                </div>
-              </div>
-              <div style={{ borderTop: '1px solid var(--line, #e5e7eb)', paddingTop: '8px', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <small style={{ color: '#6b7280', fontSize: '11px' }}>Net Profit / Loss:</small>
-                <strong className={(data.profit_loss || 0) >= 0 ? 'income' : 'loss'} style={{ fontSize: '14px' }}>
-                  {money(data.profit_loss || 0, curr)}
-                </strong>
-              </div>
-              <button type="button" className="button secondary" style={{ width: '100%', marginTop: '12px', fontSize: '12px', minHeight: '34px' }}>
-                View full {curr} report →
-              </button>
-            </article>
-          )
-        })}
-      </div>
-    </div>
-  ) : <><div className="stats finance-stats"><article><span>Total income</span><strong className="income">{money(summary.income, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} recorded income</small></article><article><span>Total expenses</span><strong>{money(summary.expenses, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} categorized spend</small></article><article><span>Net profit / loss</span><strong className={summary.profit_loss >= 0 ? 'income' : 'loss'}>{money(summary.profit_loss, summary.currency)}</strong><small>Income minus expenses</small></article></div><div className="report-grid"><article className="panel"><h3>{year === 'all' ? 'Yearly overview' : 'Monthly overview'}</h3><p>Income and expenses by {year === 'all' ? 'year' : 'month'}</p><div className="bars">{periods.length ? periods.map(m => <div className="bar-row" key={year === 'all' ? m.year : m.month}><span>{year === 'all' ? m.year : new Intl.DateTimeFormat(undefined,{month:'short'}).format(new Date(2024,m.month-1))}</span><div><i className="expense-bar" style={{width:`${m.expenses/max*100}%`}}/><i className="income-bar" style={{width:`${m.income/max*100}%`}}/></div><strong>{money(m.income-m.expenses, summary.currency)}</strong></div>) : <Empty text="No transactions in this selection."/>}</div></article><article className="panel"><h3>Expense categories</h3><p>{year === 'all' ? 'Spending across all years' : 'Year-to-date spending'}</p><div className="category-totals">{Object.entries(summary.categories || {}).map(([name,value]) => <div key={name}><span>{categoryLabel(name)}</span><strong>{money(value, summary.currency)}</strong></div>)}</div><h3 className="weekly-title">{year === 'all' ? 'Yearly totals' : 'Weekly totals'}</h3><div className="weekly-list">{(year === 'all' ? summary.years : summary.weeks)?.slice(-6).reverse().map(w => <div key={year === 'all' ? w.year : w.week}><span>{year === 'all' ? w.year : `Week ${w.week}`}</span><strong>{money(w.income-w.expenses, summary.currency)}</strong></div>)}{!(year === 'all' ? summary.years : summary.weeks)?.length && <span className="dim">No activity</span>}</div></article></div></>}</section>
+  return <section><div className="section-head"><div><h2>Profit & loss</h2><p>Weekly, monthly, and yearly totals from uploaded transactions.</p></div><div className="report-filters"><label>Job<select value={jobId} onChange={e => setJobId(e.target.value)}><option value="">All jobs</option>{jobs.map(job => <option key={job.id} value={job.id}>{job.code} - {job.name}{job.company ? ` (${job.company})` : ''}</option>)}</select></label><label>Year<select value={year} onChange={e => setYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}><option value="all">All years</option>{reportYears.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div></div><div className="stats finance-stats"><article><span>Total income</span><strong className="income">{money(summary.income, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} recorded income</small></article><article><span>Total expenses</span><strong>{money(summary.expenses, summary.currency)}</strong><small>{year === 'all' ? 'All years' : year} categorized spend</small></article><article><span>Net profit / loss</span><strong className={summary.profit_loss >= 0 ? 'income' : 'loss'}>{money(summary.profit_loss, summary.currency)}</strong><small>Income minus expenses</small></article></div><div className="report-grid"><article className="panel"><h3>{year === 'all' ? 'Yearly overview' : 'Monthly overview'}</h3><p>Income and expenses by {year === 'all' ? 'year' : 'month'}</p><div className="bars">{periods.length ? periods.map(m => <div className="bar-row" key={year === 'all' ? m.year : m.month}><span>{year === 'all' ? m.year : new Intl.DateTimeFormat(undefined,{month:'short'}).format(new Date(2024,m.month-1))}</span><div><i className="expense-bar" style={{width:`${m.expenses/max*100}%`}}/><i className="income-bar" style={{width:`${m.income/max*100}%`}}/></div><strong>{money(m.income-m.expenses, summary.currency)}</strong></div>) : <Empty text="No transactions in this selection."/>}</div></article><article className="panel"><h3>Expense categories</h3><p>{year === 'all' ? 'Spending across all years' : 'Year-to-date spending'}</p><div className="category-totals">{Object.entries(summary.categories || {}).map(([name,value]) => <div key={name}><span>{categoryLabel(name)}</span><strong>{money(value, summary.currency)}</strong></div>)}</div><h3 className="weekly-title">{year === 'all' ? 'Yearly totals' : 'Weekly totals'}</h3><div className="weekly-list">{(year === 'all' ? summary.years : summary.weeks)?.slice(-6).reverse().map(w => <div key={year === 'all' ? w.year : w.week}><span>{year === 'all' ? w.year : `Week ${w.week}`}</span><strong>{money(w.income-w.expenses, summary.currency)}</strong></div>)}{!(year === 'all' ? summary.years : summary.weeks)?.length && <span className="dim">No activity</span>}</div></article></div></section>
 }
 
 function categoryLabel(value) { return CATEGORIES.find(([id]) => id === value)?.[1] || value?.replaceAll('_',' ') || 'Other' }
-function money(value, currency='CAD') { return new Intl.NumberFormat(undefined,{style:'currency',currency}).format(Number(value || 0)) }
+function money(value, currency='CAD') { const code = (!currency || currency === 'CHF') ? 'CAD' : currency; return new Intl.NumberFormat(undefined,{style:'currency',currency: code}).format(Number(value || 0)) }
 
 function canFrom(session, permission) { return session.permissions?.includes('*') || session.permissions?.includes(permission) }
 function Empty({ text }) { return <div className="empty"><span>◇</span><p>{text}</p></div> }
