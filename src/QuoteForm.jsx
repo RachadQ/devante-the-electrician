@@ -8,7 +8,7 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
   // Company / Contractor profile state
   const [companyName, setCompanyName] = useState(quote?.company_name ?? 'Direct Connections')
   const [contactName, setContactName] = useState(quote?.contact_name ?? 'Devante Williams-Morris')
-  const [taxNumber, setTaxNumber] = useState(quote?.tax_number ?? 'GST/HST #: 707729422RT0001')
+  const [taxNumber, setTaxNumber] = useState(quote?.tax_number ?? 'GST/HST #: 123456789RT0001')
   const [addressLine1, setAddressLine1] = useState(quote?.address_line1 ?? '906-2301 Derry Road West')
   const [addressLine2, setAddressLine2] = useState(quote?.address_line2 ?? 'Mississauga, ON, Canada L5N 2R4')
   const [contactPhoneEmail, setContactPhoneEmail] = useState(quote?.contact_phone_email ?? '647-836-9906 · Devantetheelectrician@gmail.com')
