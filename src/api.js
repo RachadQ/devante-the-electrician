@@ -32,15 +32,17 @@ function sanitizeExternalUrls(value) {
 
 export async function api(path, options = {}) {
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) throw new Error('Invalid API path')
+  const { responseType, ...requestOptions } = options
   const method = options.method || 'GET'
-  const headers = { Accept: 'application/json', ...options.headers }
+  const headers = { Accept: responseType === 'blob' ? 'application/pdf' : 'application/json', ...options.headers }
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json'
   if (!['GET', 'HEAD'].includes(method.toUpperCase())) {
     const csrf = cookie('csrf_token')
     if (csrf) headers['X-CSRF-Token'] = decodeURIComponent(csrf)
   }
-  const response = await fetch(`${API_URL}${path}`, { ...options, method, headers, credentials: 'include' })
+  const response = await fetch(`${API_URL}${path}`, { ...requestOptions, method, headers, credentials: 'include' })
   if (response.status === 204) return null
+  if (response.ok && responseType === 'blob') return response.blob()
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     const error = new Error(data.detail || `Request failed (${response.status})`)

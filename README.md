@@ -33,3 +33,5 @@ Jobs is the primary navigation screen. Use the Jobs subnavigation to switch betw
 RFI uploads can record an RFI number, subject, recipient, question, and response due date. Open an RFI in a job to review the request and add dated responses with optional PDF or image attachments. Adding a response requires `RECEIPTS_UPDATE`; viewing responses requires `RECEIPTS_READ`.
 The Jobs RFI section also has a Create RFI form for requests without an uploaded file. Upload existing RFI remains available for scans or PDFs.
 Jobs are selected from a dropdown. The search field filters the dropdown by job code or name; the job creation form is collapsed below it.
+
+Structured quote cards include **Download PDF**. Saving a quote automatically generates its PDF; editing regenerates it. Downloads use the authenticated API helper, show a loading state and errors, and are available with `JOBS_READ`.

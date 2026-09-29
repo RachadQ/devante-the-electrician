@@ -179,3 +179,6 @@ h1,h2,h3,.brand-mark,.brand strong,.stats strong{font-family:Inter,ui-sans-serif
   .job-previews-details summary{min-height:52px}
 }
 
+
+.quote-pdf-download{min-width:0}.quote-pdf-download .rfi-error{max-width:260px}.quote-card .doc-main{min-width:0;overflow-wrap:anywhere}.quote-card-actions{flex-wrap:wrap}.quote-card-actions .open-file,.quote-pdf-download .button{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+@media(max-width:700px){.quote-card{align-items:stretch;flex-direction:column}.quote-card-actions{width:100%;justify-content:flex-start}.quote-pdf-download{flex:1}.quote-pdf-download .button{width:100%}}
