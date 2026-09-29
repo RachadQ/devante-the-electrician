@@ -29,6 +29,11 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
   const [paymentTerms, setPaymentTerms] = useState(quote?.payment_terms || 'Due on receipt')
   const [paymentReference, setPaymentReference] = useState(defaultPaymentRef)
 
+  // Tax & Currency state (editable for different countries/regions)
+  const [taxLabel, setTaxLabel] = useState(quote?.tax_label || 'HST')
+  const [taxRate, setTaxRate] = useState(quote?.tax_rate != null ? String(quote.tax_rate) : '13')
+  const [currency, setCurrency] = useState(quote?.currency || 'CAD')
+
   // Quote contents state
   const [title, setTitle] = useState(quote?.title || '')
   const [notes, setNotes] = useState(quote?.notes || '')
@@ -153,8 +158,9 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
   }, [urls, job.id])
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0), 0)
-  const hst = Math.round(subtotal * 0.13 * 100) / 100
-  const totalDue = subtotal + hst
+  const taxPercent = Number(taxRate) >= 0 ? Number(taxRate) : 0
+  const taxAmount = Math.round(subtotal * (taxPercent / 100) * 100) / 100
+  const totalDue = subtotal + taxAmount
 
   const submit = async event => {
     event.preventDefault()
@@ -179,6 +185,9 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
         client_company: clientCompany.trim(),
         payment_terms: paymentTerms.trim(),
         payment_reference: paymentReference.trim(),
+        tax_label: taxLabel.trim() || 'Tax',
+        tax_rate: Number(taxRate) >= 0 ? Number(taxRate) : 13,
+        currency: currency.trim() || 'CAD',
         items: items.map(item => ({
           name: item.name.trim(),
           description: item.description.trim(),
@@ -314,7 +323,14 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
                 </div>
                 <div className="meta-row">
                   <strong>Currency:</strong>
-                  <span className="meta-static-val">CAD</span>
+                  <input
+                    className="sheet-meta-input sheet-currency-input"
+                    name="currency"
+                    value={currency}
+                    onChange={e => setCurrency(e.target.value.toUpperCase())}
+                    placeholder="CAD"
+                    title="Edit currency (e.g. CAD, USD, EUR)"
+                  />
                 </div>
               </div>
             </div>
@@ -609,20 +625,43 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
               </div>
             </div>
 
-            {/* Summary & Totals Block (Subtotal, HST 13%, Total Due) */}
+            {/* Summary & Totals Block (Subtotal, Tax, Total Due - All Editable) */}
             <div className="quote-sheet-summary-section">
               <div className="quote-sheet-summary-table">
                 <div className="summary-line">
                   <span>Subtotal</span>
-                  <strong>{money(subtotal)} CAD</strong>
+                  <strong>{money(subtotal)} {currency}</strong>
                 </div>
-                <div className="summary-line">
-                  <span>HST (13%)</span>
-                  <strong>{money(hst)} CAD</strong>
+                <div className="summary-line summary-tax-line">
+                  <div className="summary-tax-label-group">
+                    <input
+                      className="sheet-inline-input sheet-tax-label-input"
+                      name="tax_label"
+                      value={taxLabel}
+                      onChange={e => setTaxLabel(e.target.value)}
+                      placeholder="HST"
+                      title="Edit tax name (e.g. HST, GST, VAT, Tax)"
+                    />
+                    <span className="tax-paren">(</span>
+                    <input
+                      className="sheet-inline-input sheet-tax-rate-input"
+                      name="tax_rate"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      value={taxRate}
+                      onChange={e => setTaxRate(e.target.value)}
+                      placeholder="13"
+                      title="Edit tax percentage rate"
+                    />
+                    <span className="tax-percent-sign">%)</span>
+                  </div>
+                  <strong>{money(taxAmount)} {currency}</strong>
                 </div>
                 <div className="summary-total-bar">
                   <span className="total-label">TOTAL DUE (incl. tax)</span>
-                  <strong className="total-amount">{money(totalDue)} CAD</strong>
+                  <strong className="total-amount">{money(totalDue)} {currency}</strong>
                 </div>
               </div>
             </div>
@@ -630,7 +669,7 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
             {/* Footer Text & Notes */}
             <div className="quote-sheet-footer">
               <p className="footer-conversion-note">
-                Converted from Quote {quoteNumber || 'QTE-DRAFT'} for Job {poNumber || job.code}. Subtotal {money(subtotal)} + HST 13% {money(hst)} = CAD {money(totalDue)} total due. Thank you for your business.
+                Converted from Quote {quoteNumber || 'QTE-DRAFT'} for Job {poNumber || job.code}. Subtotal {money(subtotal)} + {taxLabel} {taxRate}% {money(taxAmount)} = {currency} {money(totalDue)} total due. Thank you for your business.
               </p>
 
               <div className="quote-sheet-notes-field">
