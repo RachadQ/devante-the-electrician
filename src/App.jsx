@@ -511,10 +511,15 @@ export default function App() {
     try {
       const bootstrap = await api('/auth/bootstrap')
       setSession(bootstrap)
-      const requests = [canFrom(bootstrap, 'CONFIG_USERS_READ') ? api('/configuration/users') : [], canFrom(bootstrap, 'CONFIG_ROLES_READ') ? api('/configuration/roles') : [], canFrom(bootstrap, 'AUDIT_LOG_READ') ? api('/audit-logs?limit=100') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api('/receipts') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api(`/receipts/reports/summary?year=${reportYear}${reportJobId ? `&job_id=${encodeURIComponent(reportJobId)}` : ''}`) : null, canFrom(bootstrap, 'JOBS_READ') ? api('/jobs') : [], canFrom(bootstrap, 'RECEIPTS_READ') ? api('/vehicles') : []]
-      const results = await Promise.allSettled(requests)
+      // Fast initial load: only fetch essential active workspace data
+      const primaryRequests = [
+        canFrom(bootstrap, 'JOBS_READ') ? api('/jobs') : [],
+        canFrom(bootstrap, 'RECEIPTS_READ') ? api('/receipts') : [],
+        canFrom(bootstrap, 'RECEIPTS_READ') ? api('/vehicles') : [],
+      ]
+      const results = await Promise.allSettled(primaryRequests)
       const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback
-      setUsers(value(0, [])); setRoles(value(1, [])); setLogs(value(2, [])); setReceipts(value(3, [])); setSummary(value(4, null)); setJobs(value(5, [])); setVehicles(value(6, []))
+      setJobs(value(0, [])); setReceipts(value(1, [])); setVehicles(value(2, []))
       let dataUnavailable = results.some(result => result.status === 'rejected')
       if (canFrom(bootstrap, 'RECEIPTS_CREATE')) {
         try {
@@ -531,7 +536,26 @@ export default function App() {
       if (error.status !== 401) setNotice({ type: 'error', text: error.message })
       setSession(null)
     } finally { if (silent !== true) setLoading(false) }
-  }, [reportYear, reportJobId])
+  }, [])
+
+  // Lazy load tab data on demand to eliminate initial query queuing
+  useEffect(() => {
+    if (!session) return
+    if (view === 'reports' && canFrom(session, 'RECEIPTS_READ')) {
+      api(`/receipts/reports/summary?year=${reportYear}${reportJobId ? `&job_id=${encodeURIComponent(reportJobId)}` : ''}`)
+        .then(setSummary)
+        .catch(() => {})
+    }
+    if ((view === 'users' || view === 'overview') && canFrom(session, 'CONFIG_USERS_READ') && !users.length) {
+      api('/configuration/users').then(setUsers).catch(() => {})
+    }
+    if ((view === 'roles' || view === 'overview') && canFrom(session, 'CONFIG_ROLES_READ') && !roles.length) {
+      api('/configuration/roles').then(setRoles).catch(() => {})
+    }
+    if ((view === 'audit' || view === 'overview') && canFrom(session, 'AUDIT_LOG_READ') && !logs.length) {
+      api('/audit-logs?limit=100').then(setLogs).catch(() => {})
+    }
+  }, [view, session, reportYear, reportJobId, users.length, roles.length, logs.length])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { if (!session) return; const timer = setInterval(() => api('/auth/heartbeat', { method: 'POST' }).catch(() => setSession(null)), 10 * 60 * 1000); return () => clearInterval(timer) }, [session])
@@ -551,8 +575,8 @@ export default function App() {
   }, [receiptJobs])
   const filteredUsers = useMemo(() => users.filter(u => `${u.full_name} ${u.email}`.toLowerCase().includes(query.toLowerCase())), [users, query])
   const flash = (text, type = 'success') => { setNotice({ text, type }); setTimeout(() => setNotice(null), 3500) }
-  const saveUser = async (form) => { try { if (modal.user) await api(`/configuration/users/${modal.user.id}`, { method: 'PATCH', body: JSON.stringify(form) }); else await api('/configuration/users', { method: 'POST', body: JSON.stringify(form) }); setModal(null); flash('User saved successfully.'); await load() } catch (e) { flash(e.message, 'error') } }
-  const saveRole = async (form) => { try { if (modal.role) { const { code, ...body } = form; await api(`/configuration/roles/${modal.role.id}`, { method: 'PATCH', body: JSON.stringify(body) }) } else await api('/configuration/roles', { method: 'POST', body: JSON.stringify(form) }); setModal(null); flash('Role saved successfully.'); await load() } catch (e) { flash(e.message, 'error') } }
+  const saveUser = async (form) => { try { if (modal.user) await api(`/configuration/users/${modal.user.id}`, { method: 'PATCH', body: JSON.stringify(form) }); else await api('/configuration/users', { method: 'POST', body: JSON.stringify(form) }); setModal(null); flash('User saved successfully.'); const u = await api('/configuration/users'); setUsers(u) } catch (e) { flash(e.message, 'error') } }
+  const saveRole = async (form) => { try { if (modal.role) { const { code, ...body } = form; await api(`/configuration/roles/${modal.role.id}`, { method: 'PATCH', body: JSON.stringify(body) }) } else await api('/configuration/roles', { method: 'POST', body: JSON.stringify(form) }); setModal(null); flash('Role saved successfully.'); const r = await api('/configuration/roles'); setRoles(r) } catch (e) { flash(e.message, 'error') } }
   const queueReceiptJob = (job) => { setReceiptJobs(current => [...current.filter(item => item.job_id !== job.job_id), job]); setModal(current => current?.type === 'upload' ? { ...current, backgroundJob: job } : current) }
   const startBackgroundReceipts = async (selectedFiles) => {
     const files = Array.from(selectedFiles || []).slice(0, 20)
@@ -609,7 +633,7 @@ export default function App() {
       {view === 'roles' && <section><div className="section-head"><div><h2>Roles & permissions</h2><p>Group permissions into reusable access profiles.</p></div>{can('CONFIG_ROLES_CREATE') && <button className="button" onClick={() => setModal({ type: 'role' })}>+ New role</button>}</div><div className="card-grid">{roles.map(r => <article className="role-card" key={r.id}><div className="role-icon">◇</div><div className="role-title"><h3>{r.name}</h3><span className={`status ${r.is_active ? 'on' : 'off'}`}>{r.is_active ? 'Active' : 'Inactive'}</span></div><code>{r.code}</code><p>{r.permissions?.length || 0} permissions assigned</p><div className="chips">{r.permissions?.slice(0, 3).map(p => <span key={p}>{p.replaceAll('_', ' ').toLowerCase()}</span>)}{r.permissions?.length > 3 && <span>+{r.permissions.length - 3} more</span>}</div>{can('CONFIG_ROLES_UPDATE') && <button className="text-button" onClick={() => setModal({ type: 'role', role: r })}>Edit role →</button>}</article>)}{!roles.length && <Empty text="No roles have been created."/>}</div></section>}
       {view === 'jobs' && <JobsView vehicles={vehicles} allReceipts={receipts} jobs={jobs} receiptJobs={receiptJobs} can={can} onCreateRfi={job => setModal({type:'rfi-create', job})} jobSection={jobSection} setJobSection={setJobSection} onRefresh={() => load(true)} onReceiptFiles={startBackgroundReceipts} onOpenPreview={(job, backgroundJob) => setModal({type:'upload', documentType:backgroundJob.documentType, backgroundJob, job})} onUploadDocument={(job, documentType) => setModal({type:'upload', documentType, job})} onViewReport={(job, receipt) => { setReportJobId(job.id); setReportYear(new Date(receipt.incurred_at).getUTCFullYear()); setView('reports') }}/>}
       {view === 'reports' && <Reports summary={summary} year={reportYear} setYear={setReportYear} jobs={jobs} receipts={receipts} jobId={reportJobId} setJobId={setReportJobId}/>} 
-      {view === 'audit' && <section><div className="section-head"><div><h2>Audit log</h2><p>A chronological record of administrative activity.</p></div><button className="button secondary" onClick={load}>Refresh</button></div><div className="table-wrap"><table><thead><tr><th>Event</th><th>Resource</th><th>Actor</th><th>Date & time</th></tr></thead><tbody>{logs.map(log => <tr key={log.id}><td><strong>{log.action?.replaceAll('_', ' ') || 'EVENT'}</strong></td><td>{log.resource_type || '—'} <span className="dim">{log.resource_id?.slice?.(0, 8)}</span></td><td className="mono">{log.actor_id?.slice?.(0, 8) || 'System'}</td><td>{fmtDate(log.created_at)}</td></tr>)}</tbody></table>{!logs.length && <Empty text="No audit activity to show."/>}</div></section>}
+      {view === 'audit' && <section><div className="section-head"><div><h2>Audit log</h2><p>A chronological record of administrative activity.</p></div><button className="button secondary" onClick={() => api('/audit-logs?limit=100').then(setLogs)}>Refresh</button></div><div className="table-wrap"><table><thead><tr><th>Event</th><th>Resource</th><th>Actor</th><th>Date & time</th></tr></thead><tbody>{logs.map(log => <tr key={log.id}><td><strong>{log.action?.replaceAll('_', ' ') || 'EVENT'}</strong></td><td>{log.resource_type || '—'} <span className="dim">{log.resource_id?.slice?.(0, 8)}</span></td><td className="mono">{log.actor_id?.slice?.(0, 8) || 'System'}</td><td>{fmtDate(log.created_at)}</td></tr>)}</tbody></table>{!logs.length && <Empty text="No audit activity to show."/>}</div></section>}
     </main>
     {mobileMenu && <div className="mobile-more" onClick={() => setMobileMenu(false)}><div onClick={e => e.stopPropagation()}><header><strong>Administration</strong><button onClick={() => setMobileMenu(false)}>×</button></header>{NAV.filter(([id]) => ['overview','users','roles','audit'].includes(id)).map(([id,label,icon]) => <button key={id} onClick={() => changeView(id)}><span>{icon}</span>{label}<b>›</b></button>)}</div></div>}
     <nav className="mobile-nav" aria-label="Primary navigation">
