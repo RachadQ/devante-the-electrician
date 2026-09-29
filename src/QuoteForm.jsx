@@ -5,39 +5,61 @@ const blank = () => ({ id: crypto.randomUUID(), name: '', description: '', sourc
 const money = value => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'CAD' }).format(Number(value || 0))
 
 export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }) {
-  // Company / Contractor profile state
-  const [companyName, setCompanyName] = useState(quote?.company_name ?? 'Direct Connections')
-  const [contactName, setContactName] = useState(quote?.contact_name ?? 'Devante Williams-Morris')
-  const [taxNumber, setTaxNumber] = useState(quote?.tax_number ?? 'GST/HST #: 123456789RT0001')
-  const [addressLine1, setAddressLine1] = useState(quote?.address_line1 ?? '906-2301 Derry Road West')
-  const [addressLine2, setAddressLine2] = useState(quote?.address_line2 ?? 'Mississauga, ON, Canada L5N 2R4')
-  const [contactPhoneEmail, setContactPhoneEmail] = useState(quote?.contact_phone_email ?? '647-836-9906 · Devantetheelectrician@gmail.com')
+  const draftKey = `devante_quote_draft_${job?.id || 'default'}_${quote?.id || 'new'}`
+  
+  // Read saved draft on initial mount
+  const initialDraft = useRef(null)
+  if (initialDraft.current === null) {
+    try {
+      const raw = localStorage.getItem(draftKey)
+      initialDraft.current = raw ? JSON.parse(raw) : null
+    } catch {
+      initialDraft.current = null
+    }
+  }
+  const draft = initialDraft.current
+  const hasRestoredDraft = Boolean(draft && (draft.title || draft.items?.length > 1 || draft.items?.[0]?.name || draft.notes || draft.savedAt))
 
-  // Document metadata state
+  // Document metadata defaults
   const defaultQuoteNum = quote?.quote_number || (quote?.id ? `QTE-${quote.id.slice(0, 8).toUpperCase()}` : 'QTE-DRAFT')
   const defaultDateStr = quote?.quote_date || new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date())
-
   const defaultPaymentRef = quote?.payment_reference || `Please reference ${defaultQuoteNum} / PO ${quote?.po_number || job?.code || ''}`
 
-  const [docType, setDocType] = useState(quote?.doc_type || 'QUOTE')
-  const [quoteNumber, setQuoteNumber] = useState(defaultQuoteNum)
-  const [quoteDate, setQuoteDate] = useState(defaultDateStr)
-  const [poNumber, setPoNumber] = useState(quote?.po_number || job?.code || '')
-  const [clientName, setClientName] = useState(quote?.client_name || job?.name || '')
-  const [clientEmail, setClientEmail] = useState(quote?.client_email || '')
-  const [clientCompany, setClientCompany] = useState(quote?.client_company || job?.company || '')
-  const [paymentTerms, setPaymentTerms] = useState(quote?.payment_terms || 'Due on receipt')
-  const [paymentReference, setPaymentReference] = useState(defaultPaymentRef)
+  // Company / Contractor profile state
+  const [companyName, setCompanyName] = useState(draft?.companyName ?? quote?.company_name ?? 'Direct Connections')
+  const [contactName, setContactName] = useState(draft?.contactName ?? quote?.contact_name ?? 'Devante Williams-Morris')
+  const [taxNumber, setTaxNumber] = useState(draft?.taxNumber ?? quote?.tax_number ?? 'GST/HST #: 123456789RT0001')
+  const [addressLine1, setAddressLine1] = useState(draft?.addressLine1 ?? quote?.address_line1 ?? '906-2301 Derry Road West')
+  const [addressLine2, setAddressLine2] = useState(draft?.addressLine2 ?? quote?.address_line2 ?? 'Mississauga, ON, Canada L5N 2R4')
+  const [contactPhoneEmail, setContactPhoneEmail] = useState(draft?.contactPhoneEmail ?? quote?.contact_phone_email ?? '647-836-9906 · Devantetheelectrician@gmail.com')
+
+  // Document metadata state
+  const [docType, setDocType] = useState(draft?.docType ?? quote?.doc_type ?? 'QUOTE')
+  const [quoteNumber, setQuoteNumber] = useState(draft?.quoteNumber ?? defaultQuoteNum)
+  const [quoteDate, setQuoteDate] = useState(draft?.quoteDate ?? defaultDateStr)
+  const [poNumber, setPoNumber] = useState(draft?.poNumber ?? quote?.po_number ?? job?.code ?? '')
+  const [clientName, setClientName] = useState(draft?.clientName ?? quote?.client_name ?? job?.name ?? '')
+  const [clientEmail, setClientEmail] = useState(draft?.clientEmail ?? quote?.client_email ?? '')
+  const [clientCompany, setClientCompany] = useState(draft?.clientCompany ?? quote?.client_company ?? job?.company ?? '')
+  const [paymentTerms, setPaymentTerms] = useState(draft?.paymentTerms ?? quote?.payment_terms ?? 'Due on receipt')
+  const [paymentReference, setPaymentReference] = useState(draft?.paymentReference ?? defaultPaymentRef)
 
   // Tax & Currency state (editable for different countries/regions)
-  const [taxLabel, setTaxLabel] = useState(quote?.tax_label || 'HST')
-  const [taxRate, setTaxRate] = useState(quote?.tax_rate != null ? String(quote.tax_rate) : '13')
-  const [currency, setCurrency] = useState(quote?.currency || 'CAD')
+  const [taxLabel, setTaxLabel] = useState(draft?.taxLabel ?? quote?.tax_label ?? 'HST')
+  const [taxRate, setTaxRate] = useState(draft?.taxRate ?? (quote?.tax_rate != null ? String(quote.tax_rate) : '13'))
+  const [currency, setCurrency] = useState(draft?.currency ?? quote?.currency ?? 'CAD')
 
   // Quote contents state
-  const [title, setTitle] = useState(quote?.title || '')
-  const [notes, setNotes] = useState(quote?.notes || '')
-  const [items, setItems] = useState(quote?.items?.map(item => ({ id: crypto.randomUUID(), name: item.name, description: item.description || '', source_url: item.source_url || '', quantity: String(item.quantity), unit_price: String(item.unit_price) })) || [blank()])
+  const [title, setTitle] = useState(draft?.title ?? quote?.title ?? '')
+  const [notes, setNotes] = useState(draft?.notes ?? quote?.notes ?? '')
+  const [items, setItems] = useState(
+    draft?.items?.length
+      ? draft.items.map(item => ({ ...item, id: item.id || crypto.randomUUID() }))
+      : quote?.items?.map(item => ({ id: crypto.randomUUID(), name: item.name, description: item.description || '', source_url: item.source_url || '', quantity: String(item.quantity), unit_price: String(item.unit_price) })) || [blank()]
+  )
+  const [draftRestored, setDraftRestored] = useState(hasRestoredDraft)
+  const [lastSavedTime, setLastSavedTime] = useState(draft?.savedAt ? new Date(draft.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null)
+
   const [busy, setBusy] = useState(false)
   const [lookupIds, setLookupIds] = useState([])
   const [showReceiptPicker, setShowReceiptPicker] = useState(false)
@@ -157,6 +179,107 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
     return () => timers.forEach(timer => timer && clearTimeout(timer))
   }, [urls, job.id])
 
+  // Debounced auto-save to localStorage whenever any quote field changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const draftPayload = {
+        savedAt: new Date().toISOString(),
+        companyName,
+        contactName,
+        taxNumber,
+        addressLine1,
+        addressLine2,
+        contactPhoneEmail,
+        docType,
+        quoteNumber,
+        quoteDate,
+        poNumber,
+        clientName,
+        clientEmail,
+        clientCompany,
+        paymentTerms,
+        paymentReference,
+        taxLabel,
+        taxRate,
+        currency,
+        title,
+        notes,
+        items,
+      }
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(draftPayload))
+        setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+      } catch (err) {
+        console.warn('Could not auto-save quote draft', err)
+      }
+    }, 450)
+    return () => clearTimeout(timer)
+  }, [
+    draftKey, companyName, contactName, taxNumber, addressLine1, addressLine2, contactPhoneEmail,
+    docType, quoteNumber, quoteDate, poNumber, clientName, clientEmail, clientCompany,
+    paymentTerms, paymentReference, taxLabel, taxRate, currency, title, notes, items
+  ])
+
+  const discardDraft = () => {
+    try {
+      localStorage.removeItem(draftKey)
+    } catch {}
+    setCompanyName(quote?.company_name ?? 'Direct Connections')
+    setContactName(quote?.contact_name ?? 'Devante Williams-Morris')
+    setTaxNumber(quote?.tax_number ?? 'GST/HST #: 123456789RT0001')
+    setAddressLine1(quote?.address_line1 ?? '906-2301 Derry Road West')
+    setAddressLine2(quote?.address_line2 ?? 'Mississauga, ON, Canada L5N 2R4')
+    setContactPhoneEmail(quote?.contact_phone_email ?? '647-836-9906 · Devantetheelectrician@gmail.com')
+    setDocType(quote?.doc_type || 'QUOTE')
+    setQuoteNumber(defaultQuoteNum)
+    setQuoteDate(defaultDateStr)
+    setPoNumber(quote?.po_number || job?.code || '')
+    setClientName(quote?.client_name || job?.name || '')
+    setClientEmail(quote?.client_email || '')
+    setClientCompany(quote?.client_company || job?.company || '')
+    setPaymentTerms(quote?.payment_terms || 'Due on receipt')
+    setPaymentReference(defaultPaymentRef)
+    setTaxLabel(quote?.tax_label || 'HST')
+    setTaxRate(quote?.tax_rate != null ? String(quote.tax_rate) : '13')
+    setCurrency(quote?.currency || 'CAD')
+    setTitle(quote?.title || '')
+    setNotes(quote?.notes || '')
+    setItems(quote?.items?.map(item => ({ id: crypto.randomUUID(), name: item.name, description: item.description || '', source_url: item.source_url || '', quantity: String(item.quantity), unit_price: String(item.unit_price) })) || [blank()])
+    setDraftRestored(false)
+    setLastSavedTime(null)
+  }
+
+  const saveDraftForLater = () => {
+    const draftPayload = {
+      savedAt: new Date().toISOString(),
+      companyName,
+      contactName,
+      taxNumber,
+      addressLine1,
+      addressLine2,
+      contactPhoneEmail,
+      docType,
+      quoteNumber,
+      quoteDate,
+      poNumber,
+      clientName,
+      clientEmail,
+      clientCompany,
+      paymentTerms,
+      paymentReference,
+      taxLabel,
+      taxRate,
+      currency,
+      title,
+      notes,
+      items,
+    }
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(draftPayload))
+    } catch {}
+    onClose()
+  }
+
   const subtotal = items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0), 0)
   const taxPercent = Number(taxRate) >= 0 ? Number(taxRate) : 0
   const taxAmount = Math.round(subtotal * (taxPercent / 100) * 100) / 100
@@ -196,6 +319,9 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
           unit_price: Number(item.unit_price) || 0,
         }))
       })
+      try {
+        localStorage.removeItem(draftKey)
+      } catch {}
     } catch (err) {
       setError(err.message)
     } finally {
@@ -209,12 +335,34 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
         <header className="quote-modal-header">
           <div>
             <h2>{quote ? 'Edit quote' : 'New quote'} · {job.code}</h2>
-            <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>
-              Live document preview & editor. What you see is formatted directly into the PDF.
+            <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span>Live document preview & editor. What you see is formatted directly into the PDF.</span>
+              {lastSavedTime && (
+                <span className="quote-autosave-badge">
+                  💾 Auto-saved {lastSavedTime}
+                </span>
+              )}
             </p>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button>
         </header>
+
+        {draftRestored && (
+          <div className="quote-draft-banner" role="status">
+            <div className="quote-draft-info">
+              <span className="quote-draft-icon">📝</span>
+              <div>
+                <strong>Unsaved draft restored</strong>
+                <span className="quote-draft-subtext"> — your changes from {lastSavedTime || 'earlier'} were recovered.</span>
+              </div>
+            </div>
+            <div className="quote-draft-actions">
+              <button type="button" className="quote-draft-discard-btn" onClick={discardDraft} title="Discard saved draft and reset">
+                Discard draft
+              </button>
+            </div>
+          </div>
+        )}
 
         {error && <div className="rfi-error" style={{ margin: '12px 24px 0' }} role="alert">{error}</div>}
 
@@ -691,9 +839,19 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
 
           {/* Bottom Action Bar */}
           <div className="quote-modal-actions">
-            <button type="button" className="button secondary" onClick={onClose}>
-              Cancel
-            </button>
+            <div className="quote-modal-actions-left">
+              <button type="button" className="button secondary" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button secondary quote-save-draft-btn"
+                onClick={saveDraftForLater}
+                title="Keep draft saved in browser to continue working on it later"
+              >
+                💾 Save draft for later
+              </button>
+            </div>
             <button className="button" disabled={busy}>
               {busy ? 'Saving quote...' : quote ? 'Save changes' : 'Create quote'}
             </button>
