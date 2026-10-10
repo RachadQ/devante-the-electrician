@@ -52,4 +52,3 @@ export async function api(path, options = {}) {
   return sanitizeExternalUrls(data)
 }
 
-export const signInUrl = `${API_URL}/auth/microsoft/login`

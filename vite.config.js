@@ -11,6 +11,7 @@ export default defineConfig({
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
       'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
   },
   preview: {
@@ -18,6 +19,7 @@ export default defineConfig({
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
   },
 })

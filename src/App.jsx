@@ -1,6 +1,6 @@
 import QuotePdfButton from './QuotePdfButton'
 import { useCallback, useId, useEffect, useMemo, useRef, useState } from 'react'
-import { API_URL, api, signInUrl } from './api.js'
+import { API_URL, api } from './api.js'
 import QuoteForm from './QuoteForm.jsx'
 import JobBudget from './JobBudget.jsx'
 import GasVehicles from './GasVehicles.jsx'
@@ -27,18 +27,91 @@ const ALL_PERMISSIONS = [
 const initials = (name = '') => name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'U'
 const fmtDate = (value) => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
 
-function Login({ status }) {
-  const pending = status === 'ACCESS_PENDING'
-  const bypass = import.meta.env.VITE_AUTH_MODE === 'bypass'
+let googleIdentityScript
+let googleIdentityClientId = ''
+let googleIdentityCallback
+
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.id) return Promise.resolve()
+  if (!googleIdentityScript) {
+    googleIdentityScript = new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      script.defer = true
+      script.onload = resolve
+      script.onerror = () => reject(new Error('Google sign-in could not be loaded.'))
+      document.head.appendChild(script)
+    })
+  }
+  return googleIdentityScript
+}
+
+function initializeGoogleIdentity(clientId, callback) {
+  googleIdentityCallback = callback
+  if (googleIdentityClientId === clientId) return
+  window.google.accounts.id.initialize({
+    client_id: clientId,
+    auto_select: false,
+    callback: (response) => googleIdentityCallback?.(response),
+  })
+  googleIdentityClientId = clientId
+}
+
+function Login({ onSignedIn }) {
+  const buttonRef = useRef(null)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const setup = async () => {
+      try {
+        const { client_id: clientId } = await api('/auth/google/config')
+        if (!active) return
+        if (!clientId) {
+          setMessage('Google sign-in is not configured for this deployment.')
+          return
+        }
+        await loadGoogleIdentityScript()
+        if (!active || !buttonRef.current) return
+        initializeGoogleIdentity(clientId, async ({ credential }) => {
+          if (!credential) {
+            setMessage('Google did not return a sign-in credential.')
+            return
+          }
+          setBusy(true)
+          setMessage('')
+          try {
+            await api('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) })
+            await onSignedIn()
+          } catch (error) {
+            setMessage(error.message)
+          } finally {
+            setBusy(false)
+          }
+        })
+        window.google.accounts.id.renderButton(buttonRef.current, {
+          theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular',
+          width: Math.floor(buttonRef.current.clientWidth),
+        })
+      } catch (error) {
+        if (active) setMessage(error.message)
+      }
+    }
+    setup()
+    return () => { active = false }
+  }, [onSignedIn])
+
   return <main className="login-shell">
     <section className="login-card">
       <img className="brand-logo" src={dwLogo} alt="DW Services"/>
       <p className="eyebrow">DEVANTE</p>
-      <h1>{pending ? 'Access request pending' : 'Welcome back'}</h1>
-      <p className="muted">{pending ? 'Your account exists, but an administrator needs to activate it.' : bypass ? 'Development sign-in is bypassed. Start the backend and retry the connection.' : 'Sign in with your company Microsoft account to continue to the administration portal.'}</p>
-      {!pending && !bypass && <a className="button microsoft" href={signInUrl}><span className="ms-grid">▪▪<br/>▪▪</span> Continue with Microsoft</a>}
-      {!pending && bypass && <button className="button microsoft" onClick={() => location.reload()}>Connect to local backend</button>}
-      {pending && <button className="button" onClick={() => location.assign('/login')}>Try again</button>}
+      <h1>Welcome back</h1>
+      <p className="muted">Sign in with a Google account enabled by your administrator.</p>
+      <div className="google-login-button" ref={buttonRef} aria-busy={busy} />
+      {busy && <p className="login-notice" role="status">Signing in…</p>}
+      {message && <p className="login-notice error" role="alert">{message}</p>}
       <p className="login-foot">Protected access</p>
     </section>
   </main>
@@ -503,8 +576,6 @@ export default function App() {
   const [notice, setNotice] = useState(null)
   const [query, setQuery] = useState('')
   const [mobileMenu, setMobileMenu] = useState(false)
-  const status = new URLSearchParams(location.search).get('status')
-
   const can = useCallback((permission) => session?.permissions?.includes('*') || session?.permissions?.includes(permission), [session])
   const load = useCallback(async (silent = false) => {
     if (silent !== true) setLoading(true)
@@ -614,7 +685,7 @@ export default function App() {
   const logout = async () => { try { await api('/auth/logout', { method: 'POST' }) } finally { setReceiptJobs([]); setSession(null) } }
 
   if (loading) return <div className="loading"><div className="spinner"/><span>Loading Devante…</span></div>
-  if (!session) return <Login status={status} />
+  if (!session) return <Login onSignedIn={load} />
 
   const changeView = (next) => { setView(next); setMobileMenu(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const activeJobCount = receiptJobs.filter(job => ['queued', 'processing'].includes(job.status)).length

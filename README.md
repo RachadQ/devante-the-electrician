@@ -22,7 +22,7 @@ FRONTEND_URL=http://localhost:5174
 CORS_ALLOWED_ORIGINS=http://localhost:5174
 ```
 
-Microsoft OAuth credentials and MongoDB must also be configured in the backend before authentication can complete.
+For production, set `VITE_API_URL` in the frontend Vercel project to the backend HTTPS origin (for example, `https://devante-app-back.vercel.app`). Configure `GOOGLE_OAUTH_CLIENT_ID` in the backend and add the frontend's exact HTTPS origin to the matching Google OAuth web client's Authorized JavaScript origins. The backend admits only verified Google emails matching active users in the administration portal.
 
 The frontend also includes receipt/RFI screenshot capture, automatic OCR review, Google Drive links, work-item references, and weekly/monthly/yearly profit-and-loss reports. See the backend README for Drive service-account setup. Non-super-admin roles need the appropriate `RECEIPTS_*` permissions.
 

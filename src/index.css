@@ -1043,4 +1043,5 @@ h1,h2,h3,.brand-mark,.brand strong,.stats strong{font-family:Inter,ui-sans-serif
     min-width: 600px;
   }
 }
+.google-login-button{display:flex;justify-content:center;min-height:48px}.login-notice{margin:14px 0 0;color:var(--muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}.login-notice.error{color:#a32f3c}
 
