@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { API_URL, api } from './api.js'
+import { api } from './api.js'
 
 const blank = () => ({ id: crypto.randomUUID(), name: '', description: '', source_url: '', quantity: '1', unit_price: '' })
 const money = value => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'CAD' }).format(Number(value || 0))
@@ -135,16 +135,10 @@ export default function QuoteForm({ job, quote, receipts = [], onSave, onClose }
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const res = await fetch(`${API_URL}/jobs/${job.id}/quotes/extract-receipt`, {
+      const data = await api(`/jobs/${job.id}/quotes/extract-receipt`, {
         method: 'POST',
         body: formData,
-        credentials: 'include',
       })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.detail || 'Receipt scan failed')
-      }
-      const data = await res.json()
       setItems(current => [
         ...current,
         {
