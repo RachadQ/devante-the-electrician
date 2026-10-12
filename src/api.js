@@ -13,8 +13,19 @@ function apiOrigin() {
 
 export const API_URL = apiOrigin()
 
-function cookie(name) {
-  return document.cookie.split('; ').find((item) => item.startsWith(`${name}=`))?.split('=').slice(1).join('=')
+let csrfToken = ''
+let csrfRequest = null
+
+async function getCsrfToken() {
+  if (csrfToken) return csrfToken
+  if (!csrfRequest) {
+    csrfRequest = api('/auth/csrf').then(data => {
+      if (!data.csrf_token) throw new Error('Could not initialize session security. Please sign in again.')
+      csrfToken = data.csrf_token
+      return csrfToken
+    }).finally(() => { csrfRequest = null })
+  }
+  return csrfRequest
 }
 
 function sanitizeExternalUrls(value) {
@@ -36,14 +47,15 @@ export async function api(path, options = {}) {
   const method = options.method || 'GET'
   const headers = { Accept: responseType === 'blob' ? 'application/pdf' : 'application/json', ...options.headers }
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json'
-  if (!['GET', 'HEAD'].includes(method.toUpperCase())) {
-    const csrf = cookie('csrf_token')
-    if (csrf) headers['X-CSRF-Token'] = decodeURIComponent(csrf)
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase()) && path !== '/auth/google' && path !== '/public/rfi/responses') {
+    headers['X-CSRF-Token'] = await getCsrfToken()
   }
   const response = await fetch(`${API_URL}${path}`, { ...requestOptions, method, headers, credentials: 'include' })
   if (response.status === 204) return null
   if (response.ok && responseType === 'blob') return response.blob()
   const data = await response.json().catch(() => ({}))
+  if (response.ok && data.csrf_token) csrfToken = data.csrf_token
+  if (response.status === 401 || (response.ok && path === '/auth/logout')) csrfToken = ''
   if (!response.ok) {
     const error = new Error(data.detail || `Request failed (${response.status})`)
     error.status = response.status
